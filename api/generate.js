@@ -1,3 +1,5 @@
+import OpenAI from "openai";
+
 export const config = {
   maxDuration: 60,
 };
@@ -63,80 +65,73 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const apiKey = process.env.OPENAI_API_KEY;
+  const baseURL = process.env.OPENAI_BASE_URL;
+
   if (!apiKey) return res.status(500).json({ error: "OpenAI API key not configured" });
 
   try {
     const { input, inputType } = req.body;
     if (!input || !input.trim()) return res.status(400).json({ error: "Input is required" });
 
-    const userPrompt = buildUserPrompt(input.trim(), inputType || "topic");
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 16000,
-        temperature: 0.8,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "content_calendar",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                days: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      day: { type: "integer" },
-                      label: { type: "string" },
-                      description: { type: "string" },
-                      pieces: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            type: { type: "string" },
-                            title: { type: "string" },
-                            content: { type: "string" },
-                            platform: { type: "string" },
-                          },
-                          required: ["type", "title", "content", "platform"],
-                          additionalProperties: false,
-                        },
-                      },
-                    },
-                    required: ["day", "label", "description", "pieces"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["days"],
-              additionalProperties: false,
-            },
-          },
-        },
-      }),
+    const openai = new OpenAI({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI error:", response.status, errorText);
-      return res.status(502).json({ error: `AI generation failed (${response.status}). Please try again.` });
-    }
+    const userPrompt = buildUserPrompt(input.trim(), inputType || "topic");
 
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content;
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 16000,
+      temperature: 0.8,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "content_calendar",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              days: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    day: { type: "integer" },
+                    label: { type: "string" },
+                    description: { type: "string" },
+                    pieces: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          type: { type: "string" },
+                          title: { type: "string" },
+                          content: { type: "string" },
+                          platform: { type: "string" },
+                        },
+                        required: ["type", "title", "content", "platform"],
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  required: ["day", "label", "description", "pieces"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["days"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+
+    const rawContent = completion.choices?.[0]?.message?.content;
     if (!rawContent) return res.status(502).json({ error: "No content generated. Please try again." });
 
     let parsed;
@@ -146,7 +141,7 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: "Failed to parse generated content. Please try again." });
     }
 
-    // Remove any em dashes that slipped through
+    // Strip any em dashes that slipped through
     const cleanDays = parsed.days.map((day) => ({
       ...day,
       description: (day.description || "").replace(/\u2014/g, ".").replace(/\u2013/g, ","),
@@ -165,6 +160,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("Generate error:", err);
-    return res.status(500).json({ error: "Internal server error. Please try again." });
+    const msg = err?.message || "Internal server error. Please try again.";
+    return res.status(500).json({ error: msg });
   }
 }
