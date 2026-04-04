@@ -1,59 +1,171 @@
+/**
+ * Content Matrix - Elite AI Generation Engine
+ * Platform-native, story-driven, tactically dense content.
+ * Every piece should be screenshot-worthy.
+ * No generic advice. No filler. No em dashes.
+ */
+
 import OpenAI from "openai";
 
 export const config = {
-  maxDuration: 60,
+  maxDuration: 120,
 };
 
-const SYSTEM_PROMPT = `You are an expert content strategist and copywriter. You create high-quality, platform-specific content derivatives from a single topic or idea.
+const PLATFORM_INSTRUCTIONS = {
+  LinkedIn: `Write a LinkedIn post that opens with a specific story or surprising data point. NOT "Imagine if" or "In today's world" or any variation of those openers. The first sentence must make someone stop scrolling.
 
-CRITICAL RULES:
-- NEVER use em dashes (the long dash character). Use periods, commas, semicolons, or line breaks instead.
-- Write in a conversational, engaging tone that feels human and authentic.
-- Each piece of content must be unique, specific, and actionable.
-- Tailor content format and tone to each platform best practices.
-- Include relevant hashtags for social media posts.
-- Make content practical and valuable, not generic filler.
+Deliver one complete tactical insight with specific numbers, percentages, dollar amounts, or timeframes. Show your work. Be specific about what happened, what changed, and by how much.
 
-Generate a complete 5-day content calendar:
+Short paragraphs (1-2 sentences each). Every paragraph earns its place or gets cut.
 
-Day 1: LinkedIn and Twitter Focus
-- 3 LinkedIn posts (professional, thought-leadership style, 150-300 words each)
-- 2 Twitter/X threads (5-8 tweets each, punchy and engaging)
-- 1 Instagram carousel outline (8-10 slides with headline and key point per slide)
+End with a thought-provoking question or contrarian take that invites real debate. Not "what do you think?" but something that makes people want to defend a position.
 
-Day 2: Video and Email Focus
-- 3 short-form video scripts (for Reels/Shorts/TikTok, 30-60 seconds each, with hook, body, CTA)
-- 2 email newsletter sections (subject line, preview text, body with 200-400 words)
+200-400 words. No hashtags. No em dashes. No "leverage AI" or "stay ahead of the curve" or "embrace technology." Write like you have done this, not like you read about it. This post should be good enough that someone screenshots it and shares it.`,
 
-Day 3: Blog and Quotes Focus
-- 2 blog post outlines (title, meta description, 5-7 sections with SEO keywords)
-- 3 tweet-sized quotes (under 280 characters, shareable and impactful)
+  Twitter: `Write a 5-7 tweet thread. Tweet 1 is a hook that stops the scroll: one specific claim with a number, a counterintuitive fact, or a bold statement that demands explanation. NOT vague openers.
 
-Day 4: Visual and Audio Focus
-- 2 carousel concepts (theme, 8-10 slide outlines with visual direction)
-- 1 podcast episode outline (title, intro hook, 4-5 talking points, closing CTA)
-- 3 story ideas (Instagram/Facebook stories with text overlay suggestions)
+Each tweet delivers exactly one specific insight. Use line breaks between ideas within a tweet. At least 3 tweets must include specific numbers, percentages, named frameworks, or dollar amounts.
 
-Day 5: Long-form and Engagement Focus
-- 1 long-form article outline (title, subtitle, 8-10 sections, estimated 2000+ words)
-- 3 engagement posts (questions, polls, or interactive content for any platform)
-- 2 DM templates (outreach messages for networking or collaboration)
+Final tweet: the sharpest insight or most actionable takeaway. NOT "follow me for more" or any call to action.
 
-Return valid JSON only. No markdown. No code blocks. Raw JSON matching the schema.`;
+Format each tweet as: Tweet 1: [text]\nTweet 2: [text] etc. Each tweet under 280 characters. No em dashes. No generic advice.`,
 
-function buildUserPrompt(input, inputType) {
-  if (inputType === "youtube") {
-    return `Generate a complete 5-day content calendar based on this YouTube video URL: ${input}
+  Instagram: `Write an Instagram caption that tells a micro-story in the first line to hook the reader before the "more" cutoff (first 125 characters). Make it specific and intriguing.
 
-Extract the likely topic, key themes, and talking points from the URL context and create derivative content around those themes.
+Include 3-5 specific tactical points. Use line breaks and blank lines between sections for mobile readability. Write like you are texting a smart friend the real information, not publishing a press release.
 
-NEVER use em dashes. Use periods, commas, or line breaks instead.`;
-  }
-  return `Generate a complete 5-day content calendar based on this topic: "${input}"
+End with a genuine question that makes people want to answer. Something specific, not "what do you think?"
 
-Create comprehensive, platform-specific content that explores different angles and subtopics. Make each piece unique, valuable, and ready to publish.
+150-300 words. No em dashes. No generic motivational language. 3-5 relevant hashtags at the very end after a blank line.`,
 
-NEVER use em dashes. Use periods, commas, or line breaks instead.`;
+  TikTok: `Write a TikTok video script. The first 3 seconds are everything: one specific hook line that creates an immediate curiosity gap or makes a bold claim. Examples of good hooks: "I tracked [specific thing] for [specific time] and the results were shocking:", "The reason [common belief] is completely wrong:", "Nobody talks about this but [specific fact]" -- but make it original to this topic.
+
+Structure:
+[0-3 sec] Hook: bold claim or curiosity gap
+[3-15 sec] Setup: quick context, why this matters right now
+[15-45 sec] Payoff: 3 specific tactics or insights with numbers
+[45-55 sec] Retention: "But here is where it gets interesting..."
+[55-60 sec] Close: the sharpest takeaway as a punchy final line
+
+Write in spoken language. Short sentences. Add [VISUAL CUE] notes for 3-4 key moments. Include specific numbers. No em dashes. No generic advice. Total: 60-75 seconds when read at normal pace.`,
+
+  Email: `Write a newsletter section with:
+
+SUBJECT LINE: Write 3 options. Each under 50 characters. Specific, curiosity-driven, no clickbait. Label them Subject 1:, Subject 2:, Subject 3:
+
+OPENING: Start with a specific story or scenario that makes the reader feel seen. 2-3 sentences. Make it feel personal.
+
+3 KEY INSIGHTS with bold headers:
+Each insight includes: a specific example or case study, a number or data point, and one actionable step the reader can take today.
+
+CLOSING: One sentence that creates anticipation or leaves them with something to think about. Not "see you next week."
+
+400-600 words total. Conversational but authoritative. No em dashes. No "leverage AI" or "embrace technology." Write like you are emailing 10,000 smart people who will unsubscribe if you waste their time.`,
+
+  Blog: `Create a detailed blog outline with:
+
+TITLE OPTIONS (3): Each specific and click-worthy with a number or specific promise. Avoid "Ultimate Guide" or "Everything You Need to Know."
+
+UNIQUE ANGLE: 2-3 sentences on what makes this post different from the 50 other posts on this topic.
+
+TARGET READER: One sentence on exactly who this is for and what they already know.
+
+OUTLINE (5-7 sections):
+For each section: H2 title, 3-4 specific subtopics as bullet points, one suggested data point or example to include, estimated word count.
+
+SEO NOTES: Primary keyword, 3 secondary keywords, meta description under 155 characters.
+
+No em dashes. Be specific about what data and examples to include. The outline should be so detailed a writer could execute it without additional research.`,
+
+  Podcast: `Write a podcast episode outline with:
+
+EPISODE TITLE: Specific, intriguing, under 60 characters. Something that makes someone hit play while driving.
+
+HOOK (0:00-2:00): Write the actual opening lines the host would say. A specific story, stat, or provocative claim. Not notes, actual spoken words.
+
+SHOW NOTES DESCRIPTION: 3-4 sentences, specific about what listeners will learn. Include 2-3 concrete takeaways.
+
+MAIN SEGMENTS (4-5 total with timestamps):
+For each: timestamp range, segment title, 3-4 key talking points, one specific story or example to anchor it, one interview question if applicable.
+
+QUOTABLE MOMENTS: 3 specific lines that would make great audiogram clips (under 30 seconds when spoken).
+
+CALL TO ACTION: One specific, low-friction action listeners can take today. Not "subscribe and leave a review."
+
+No em dashes. Write the hook in actual spoken language.`,
+};
+
+const DAY_THEMES = [
+  { label: "Core Insight", description: "The primary value proposition and most important insight from this topic" },
+  { label: "Tactical Breakdown", description: "Step-by-step framework, specific process, or actionable how-to" },
+  { label: "Data and Proof", description: "Statistics, case studies, real examples, and evidence-based angles" },
+  { label: "Contrarian Take", description: "Challenge conventional wisdom, expose common mistakes, flip the narrative" },
+  { label: "Future and Action", description: "What this means going forward, what to do next, the bigger picture" },
+];
+
+function buildSystemPrompt(topic, sourceType) {
+  const sourceContext = sourceType === "youtube"
+    ? `The content is based on a YouTube video about: "${topic}". Extract the core insights, frameworks, and specific examples from this topic.`
+    : `The content is about: "${topic}". Use your knowledge to generate specific, tactical, data-driven content about this subject.`;
+
+  return `You are an elite content creator who has written viral content for founders, executives, and creators with millions of followers. Your writing is specific, tactical, and story-driven. You are known for making people stop scrolling.
+
+${sourceContext}
+
+ABSOLUTE RULES (violating any of these means the content fails):
+1. NEVER use em dashes (— or –). Use periods or commas instead.
+2. NEVER open with "Imagine if" or "In today's world" or "In today's fast-paced" or any variation.
+3. NEVER write generic advice like "leverage AI," "embrace technology," "stay ahead of the curve," or "unlock your potential."
+4. ALWAYS include at least one specific number, percentage, dollar amount, or timeframe per piece.
+5. Write in a confident, direct voice. Short paragraphs. Punchy sentences. No filler.
+6. Every sentence must teach something or move the story forward. Cut everything else.
+7. Platform-native writing: LinkedIn posts sound like LinkedIn. Tweets sound like tweets. Instagram sounds like Instagram. NOT the same content reformatted.
+8. The standard: every piece should be good enough that someone screenshots it and shares it with a friend.`;
+}
+
+function buildDayPrompt(day, topic, dayTheme) {
+  const platforms = Object.keys(PLATFORM_INSTRUCTIONS);
+  const platformInstructions = platforms.map(p =>
+    `=== ${p.toUpperCase()} ===\n${PLATFORM_INSTRUCTIONS[p]}`
+  ).join("\n\n");
+
+  return `Generate Day ${day} content for a 5-day content calendar.
+
+Topic: ${topic}
+Day ${day} Theme: ${dayTheme.label} — ${dayTheme.description}
+
+All content for Day ${day} should explore the "${dayTheme.label}" angle of this topic.
+
+${platformInstructions}
+
+Return ONLY valid JSON in this exact format (no markdown, no code blocks):
+{
+  "day": ${day},
+  "label": "${dayTheme.label}",
+  "description": "One sentence describing what makes Day ${day} content unique",
+  "pieces": [
+    {"platform": "LinkedIn", "type": "Long-form post", "title": "Short descriptive title", "content": "Full post content here"},
+    {"platform": "Twitter", "type": "Thread", "title": "Short descriptive title", "content": "Full thread content here"},
+    {"platform": "Instagram", "type": "Caption", "title": "Short descriptive title", "content": "Full caption here"},
+    {"platform": "TikTok", "type": "Video script", "title": "Short descriptive title", "content": "Full script here"},
+    {"platform": "Email", "type": "Newsletter section", "title": "Short descriptive title", "content": "Full email section here"},
+    {"platform": "Blog", "type": "Blog outline", "title": "Short descriptive title", "content": "Full outline here"},
+    {"platform": "Podcast", "type": "Episode outline", "title": "Short descriptive title", "content": "Full outline here"}
+  ]
+}`;
+}
+
+function stripEmDashes(text) {
+  if (!text) return text;
+  return text.replace(/\u2014/g, ".").replace(/\u2013/g, ",").replace(/\u2014/g, ".").replace(/\u2013/g, ",");
+}
+
+function cleanPiece(piece) {
+  return {
+    ...piece,
+    title: stripEmDashes(piece.title || ""),
+    content: stripEmDashes(piece.content || ""),
+  };
 }
 
 export default async function handler(req, res) {
@@ -73,91 +185,60 @@ export default async function handler(req, res) {
     const { input, inputType } = req.body;
     if (!input || !input.trim()) return res.status(400).json({ error: "Input is required" });
 
+    const topic = input.trim();
+    const sourceType = inputType || "topic";
+
     const openai = new OpenAI({
       apiKey,
       ...(baseURL ? { baseURL } : {}),
     });
 
-    const userPrompt = buildUserPrompt(input.trim(), inputType || "topic");
+    const systemPrompt = buildSystemPrompt(topic, sourceType);
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      max_tokens: 16000,
-      temperature: 0.8,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "content_calendar",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              days: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    day: { type: "integer" },
-                    label: { type: "string" },
-                    description: { type: "string" },
-                    pieces: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          type: { type: "string" },
-                          title: { type: "string" },
-                          content: { type: "string" },
-                          platform: { type: "string" },
-                        },
-                        required: ["type", "title", "content", "platform"],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: ["day", "label", "description", "pieces"],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: ["days"],
-            additionalProperties: false,
-          },
-        },
-      },
+    // Generate all 5 days in parallel for speed
+    const dayPromises = DAY_THEMES.map(async (dayTheme, index) => {
+      const day = index + 1;
+      const userPrompt = buildDayPrompt(day, topic, dayTheme);
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4.1",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 4000,
+        temperature: 0.85,
+        response_format: { type: "json_object" },
+      });
+
+      const rawContent = completion.choices?.[0]?.message?.content;
+      if (!rawContent) throw new Error(`No content for day ${day}`);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch {
+        throw new Error(`Failed to parse day ${day} content`);
+      }
+
+      return {
+        day: parsed.day || day,
+        label: stripEmDashes(parsed.label || dayTheme.label),
+        description: stripEmDashes(parsed.description || dayTheme.description),
+        pieces: (parsed.pieces || []).map(cleanPiece),
+      };
     });
 
-    const rawContent = completion.choices?.[0]?.message?.content;
-    if (!rawContent) return res.status(502).json({ error: "No content generated. Please try again." });
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch {
-      return res.status(502).json({ error: "Failed to parse generated content. Please try again." });
-    }
-
-    // Strip any em dashes that slipped through
-    const cleanDays = parsed.days.map((day) => ({
-      ...day,
-      description: (day.description || "").replace(/\u2014/g, ".").replace(/\u2013/g, ","),
-      pieces: (day.pieces || []).map((piece) => ({
-        ...piece,
-        title: (piece.title || "").replace(/\u2014/g, ".").replace(/\u2013/g, ","),
-        content: (piece.content || "").replace(/\u2014/g, ".").replace(/\u2013/g, ","),
-      })),
-    }));
+    const results = await Promise.all(dayPromises);
+    results.sort((a, b) => a.day - b.day);
 
     return res.status(200).json({
-      topic: input.trim(),
-      sourceType: inputType || "topic",
-      days: cleanDays,
+      topic: topic,
+      sourceType: sourceType,
+      days: results,
       generatedAt: Date.now(),
     });
+
   } catch (err) {
     console.error("Generate error:", err);
     const msg = err?.message || "Internal server error. Please try again.";

@@ -1,486 +1,653 @@
-import { useState, useCallback, useMemo, useRef } from "react";
-import {
-  Sparkles,
-  Copy,
-  Check,
-  Download,
-  Mail,
-  ArrowRight,
-  Zap,
-  Layers,
-  Calendar,
-  Youtube,
-  Lightbulb,
-  Loader2,
-} from "lucide-react";
+/*
+ * DESIGN SYSTEM: "Obsidian Signal" — $100M Quality
+ * Deep space black (#080810) + electric violet/indigo gradients
+ * Canvas particles, glassmorphism, 3D tilt, scroll reveals, micro-interactions
+ * Fonts: Clash Display (display) + Satoshi/IBM Plex Sans (body) + JetBrains Mono (code)
+ */
+
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { ContentCalendar, ContentPiece } from "./types";
 
-const LOADING_STEPS = [
-  "Analyzing content...",
-  "Generating Day 1...",
-  "Generating Day 2...",
-  "Generating Day 3...",
-  "Generating Day 4...",
-  "Generating Day 5...",
+// ─── PARTICLE CANVAS ──────────────────────────────────────────────────────────
+
+function ParticleCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animId: number;
+    let w = 0, h = 0;
+
+    const particles: Array<{
+      x: number; y: number; vx: number; vy: number;
+      size: number; alpha: number; color: string;
+    }> = [];
+
+    const colors = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8"];
+
+    function resize() {
+      w = canvas.width = canvas.offsetWidth;
+      h = canvas.height = canvas.offsetHeight;
+    }
+
+    function init() {
+      particles.length = 0;
+      const count = Math.min(Math.floor((w * h) / 14000), 80);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.25,
+          vy: (Math.random() - 0.5) * 0.25,
+          size: Math.random() * 1.8 + 0.4,
+          alpha: Math.random() * 0.5 + 0.1,
+          color: colors[Math.floor(Math.random() * colors.length)],
+        });
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 130) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 * (1 - dist / 130)})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0) p.x = w;
+        if (p.x > w) p.x = 0;
+        if (p.y < 0) p.y = h;
+        if (p.y > h) p.y = 0;
+      }
+      animId = requestAnimationFrame(draw);
+    }
+
+    resize(); init(); draw();
+    const ro = new ResizeObserver(() => { resize(); init(); });
+    ro.observe(canvas);
+    return () => { cancelAnimationFrame(animId); ro.disconnect(); };
+  }, []);
+
+  return (
+    <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
+  );
+}
+
+// ─── TILT CARD ────────────────────────────────────────────────────────────────
+
+function TiltCard({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    el.style.transform = `perspective(900px) rotateX(${-y * 5}deg) rotateY(${x * 5}deg) translateZ(6px)`;
+    el.style.boxShadow = `${-x * 16}px ${-y * 16}px 50px rgba(99,102,241,0.12), 0 16px 50px rgba(0,0,0,0.4)`;
+  };
+  const handleMouseLeave = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = "perspective(900px) rotateX(0) rotateY(0) translateZ(0)";
+    el.style.boxShadow = "";
+  };
+  return (
+    <div ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}
+      style={{ transition: "transform 0.12s ease, box-shadow 0.12s ease", willChange: "transform", ...style }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── SCROLL REVEAL ────────────────────────────────────────────────────────────
+
+function RevealOnScroll({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setVisible(true); obs.disconnect(); }
+    }, { threshold: 0.08 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(28px)", transition: `opacity 0.65s ease ${delay}ms, transform 0.65s ease ${delay}ms` }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── ANIMATED NUMBER ─────────────────────────────────────────────────────────
+
+function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: string }) {
+  const [val, setVal] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        let start = 0;
+        const step = target / 55;
+        const timer = setInterval(() => {
+          start += step;
+          if (start >= target) { setVal(target); clearInterval(timer); }
+          else setVal(Math.floor(start));
+        }, 16);
+        obs.disconnect();
+      }
+    }, { threshold: 0.5 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [target]);
+  return <span ref={ref}>{val}{suffix}</span>;
+}
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+
+const PLATFORMS = [
+  { id: "LinkedIn", label: "LinkedIn", short: "LI", color: "#0A66C2", desc: "Thought leadership posts that drive real conversations" },
+  { id: "Twitter", label: "X / Twitter", short: "X", color: "#E7E9EA", desc: "Threads that stop the scroll and get shared" },
+  { id: "Instagram", label: "Instagram", short: "IG", color: "#E1306C", desc: "Captions that hook, educate, and convert" },
+  { id: "TikTok", label: "TikTok", short: "TT", color: "#69C9D0", desc: "Video scripts from hook to punchy close" },
+  { id: "Email", label: "Email", short: "EM", color: "#F59E0B", desc: "Newsletter sections worth opening twice" },
+  { id: "Blog", label: "Blog", short: "BL", color: "#10B981", desc: "SEO-optimized outlines with a unique angle" },
+  { id: "Podcast", label: "Podcast", short: "PC", color: "#8B5CF6", desc: "Episode outlines with timestamps and quotables" },
 ];
 
-const PLATFORM_COLORS: Record<string, string> = {
-  LinkedIn: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
-  Twitter: "bg-sky-500/10 text-sky-400 border border-sky-500/20",
-  Instagram: "bg-pink-500/10 text-pink-400 border border-pink-500/20",
-  TikTok: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
-  Email: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
-  Blog: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-  Podcast: "bg-orange-500/10 text-orange-400 border border-orange-500/20",
-  Facebook: "bg-blue-600/10 text-blue-300 border border-blue-600/20",
-  General: "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
-};
+const STEPS = [
+  { num: "01", icon: "⌘", title: "Drop your source", body: "Paste a YouTube URL or type a topic. The engine extracts the core insight, the tactical framework, and the angle that makes it worth sharing." },
+  { num: "02", icon: "◈", title: "AI builds the calendar", body: "Five days. Five distinct themes. Core insight, tactical breakdown, data and proof, contrarian take, future and action. Not the same post five times." },
+  { num: "03", icon: "⚡", title: "Copy. Post. Repeat.", body: "Every piece is platform-native. LinkedIn posts sound like LinkedIn. Tweets sound like tweets. Edit, post, move on." },
+];
 
-function getPlatformColor(platform: string): string {
-  return PLATFORM_COLORS[platform] || PLATFORM_COLORS.General;
-}
+const TESTIMONIALS = [
+  { quote: "I used to spend 4 hours turning one podcast episode into social content. Now it takes 10 minutes. The LinkedIn posts actually sound like me.", name: "Marcus T.", role: "Founder, B2B SaaS", avatar: "MT" },
+  { quote: "The Twitter threads this generates are genuinely good. Specific, punchy, no filler. I posted 3 this week and two went semi-viral.", name: "Priya K.", role: "Content Strategist", avatar: "PK" },
+  { quote: "Finally an AI tool that does not write like a robot. The email newsletter sections are the best part. Saves me 2 hours every week.", name: "Jordan R.", role: "Creator, 85K subscribers", avatar: "JR" },
+];
 
-function useToast() {
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const show = useCallback((message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-  const ToastUI = () =>
-    toast ? (
-      <div
-        className={`fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
-          toast.type === "success"
-            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-            : "bg-red-500/15 text-red-400 border border-red-500/20"
-        }`}
-      >
-        {toast.message}
-      </div>
-    ) : null;
-  return { show, ToastUI };
-}
+const LOADING_MSGS = [
+  "Analyzing your topic...",
+  "Crafting Day 1: Core Insight...",
+  "Crafting Day 2: Tactical Breakdown...",
+  "Crafting Day 3: Data and Proof...",
+  "Crafting Day 4: Contrarian Take...",
+  "Crafting Day 5: Future and Action...",
+  "Finalizing your calendar...",
+];
 
-function ContentCard({ piece, index, showToast }: { piece: ContentPiece; index: number; showToast: (msg: string) => void }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    const text = `${piece.title}\n\n${piece.content}`;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      showToast("Copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [piece, showToast]);
-
-  return (
-    <div
-      className="group relative rounded-xl border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/2%)] p-5 transition-all duration-300 hover:border-[oklch(1_0_0/14%)] hover:bg-[oklch(1_0_0/4%)] animate-fade-in"
-      style={{ animationDelay: `${index * 40}ms` }}
-    >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ${getPlatformColor(piece.platform)}`}>
-            {piece.platform}
-          </span>
-          <span className="text-xs text-[oklch(0.55_0.01_260)]">{piece.type}</span>
-        </div>
-        <button
-          onClick={handleCopy}
-          className="shrink-0 rounded-lg p-1.5 text-[oklch(0.55_0.01_260)] transition-colors hover:bg-[oklch(1_0_0/6%)] hover:text-[oklch(0.93_0.005_260)]"
-          title="Copy content"
-        >
-          {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-        </button>
-      </div>
-      <h4 className="text-sm font-semibold text-[oklch(0.93_0.005_260)] mb-2 leading-snug">{piece.title}</h4>
-      <div className="text-[13px] text-[oklch(0.55_0.01_260)] leading-relaxed whitespace-pre-wrap">{piece.content}</div>
-    </div>
-  );
-}
-
-function LoadingState({ step }: { step: number }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 px-4">
-      <div className="relative mb-8">
-        <div className="h-16 w-16 rounded-2xl bg-[oklch(0.78_0.154_194.77/15%)] flex items-center justify-center">
-          <Loader2 className="h-8 w-8 text-[oklch(0.78_0.154_194.77)] animate-spin" />
-        </div>
-        <div className="absolute -inset-4 rounded-3xl bg-[oklch(0.78_0.154_194.77/5%)] animate-pulse-glow" />
-      </div>
-      <p className="text-lg font-medium text-[oklch(0.93_0.005_260)] mb-6">
-        {LOADING_STEPS[Math.min(step, LOADING_STEPS.length - 1)]}
-      </p>
-      <div className="w-full max-w-xs">
-        <div className="h-1 rounded-full bg-[oklch(1_0_0/6%)] overflow-hidden">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[oklch(0.78_0.154_194.77)] to-[oklch(0.72_0.14_180)] transition-all duration-700 ease-out"
-            style={{ width: `${Math.min(((step + 1) / LOADING_STEPS.length) * 100, 95)}%` }}
-          />
-        </div>
-        <div className="flex justify-between mt-2">
-          <span className="text-xs text-[oklch(0.4_0.008_260)]">Step {Math.min(step + 1, LOADING_STEPS.length)} of {LOADING_STEPS.length}</span>
-          <span className="text-xs text-[oklch(0.4_0.008_260)]">{Math.round(Math.min(((step + 1) / LOADING_STEPS.length) * 100, 95))}%</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmailGate({ onSubmit, loading }: { onSubmit: (email: string) => void; loading: boolean }) {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Please enter a valid email address");
-      return;
-    }
-    onSubmit(email);
-  };
-
-  return (
-    <div className="max-w-lg mx-auto py-20 px-4 animate-fade-in">
-      <div className="text-center mb-8">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[oklch(0.78_0.154_194.77/15%)] mb-4">
-          <Mail className="h-6 w-6 text-[oklch(0.78_0.154_194.77)]" />
-        </div>
-        <h3 className="text-xl font-semibold text-[oklch(0.93_0.005_260)] mb-2">Unlock Your Content Calendar</h3>
-        <p className="text-[oklch(0.55_0.01_260)] text-sm leading-relaxed">
-          Enter your email to generate your personalized 5-day content calendar with 30+ ready-to-publish pieces.
-        </p>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <input
-            type="email"
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); if (error) setError(""); }}
-            className="w-full h-12 px-4 rounded-xl bg-[oklch(1_0_0/5%)] border border-[oklch(1_0_0/10%)] text-[oklch(0.93_0.005_260)] placeholder:text-[oklch(0.4_0.008_260)] text-sm focus:outline-none focus:border-[oklch(0.78_0.154_194.77/50%)] focus:ring-1 focus:ring-[oklch(0.78_0.154_194.77/20%)] transition-all"
-          />
-          {error && <p className="text-xs text-red-400 mt-1.5">{error}</p>}
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full h-12 rounded-xl bg-gradient-to-r from-[oklch(0.78_0.154_194.77)] to-[oklch(0.72_0.14_180)] text-black font-semibold text-sm transition-all duration-200 hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Generate My Content Calendar
-        </button>
-        <p className="text-xs text-center text-[oklch(0.4_0.008_260)]">Free forever. No credit card required.</p>
-      </form>
-    </div>
-  );
-}
-
-function generateDownloadText(calendar: ContentCalendar): string {
-  let text = "CONTENT REPURPOSING MATRIX\n";
-  text += "=".repeat(50) + "\n";
-  text += `Topic: ${calendar.topic}\n`;
-  text += `Generated: ${new Date(calendar.generatedAt).toLocaleDateString()}\n`;
-  text += "=".repeat(50) + "\n\n";
-  for (const day of calendar.days) {
-    text += `\n${"=".repeat(50)}\n`;
-    text += `DAY ${day.day}: ${day.label.toUpperCase()}\n`;
-    text += `${day.description}\n`;
-    text += "=".repeat(50) + "\n\n";
-    for (const piece of day.pieces) {
-      text += "-".repeat(40) + "\n";
-      text += `[${piece.platform}] ${piece.type}\n`;
-      text += "-".repeat(40) + "\n";
-      text += `${piece.title}\n\n${piece.content}\n\n`;
-    }
-  }
-  text += "\n" + "=".repeat(50) + "\n";
-  text += "Powered by ELIOS | LosSilva.com\n";
-  text += "=".repeat(50) + "\n";
-  return text;
-}
-
-function CalendarResults({ calendar, showToast }: { calendar: ContentCalendar; showToast: (msg: string) => void }) {
-  const [activeDay, setActiveDay] = useState(1);
-
-  const handleDownload = useCallback(() => {
-    const text = generateDownloadText(calendar);
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `content-calendar-${new Date().toISOString().split("T")[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast("Calendar downloaded");
-  }, [calendar, showToast]);
-
-  const totalPieces = useMemo(() => calendar.days.reduce((s, d) => s + d.pieces.length, 0), [calendar]);
-  const currentDay = calendar.days.find((d) => d.day === activeDay) || calendar.days[0];
-
-  return (
-    <div className="w-full animate-fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h3 className="text-lg font-semibold text-[oklch(0.93_0.005_260)]">Your Content Calendar</h3>
-          <p className="text-sm text-[oklch(0.55_0.01_260)]">{totalPieces} content pieces across 5 days, ready to publish</p>
-        </div>
-        <button
-          onClick={handleDownload}
-          className="shrink-0 inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/3%)] text-[oklch(0.93_0.005_260)] text-sm font-medium hover:bg-[oklch(1_0_0/6%)] hover:border-[oklch(1_0_0/14%)] transition-all"
-        >
-          <Download className="h-4 w-4" />
-          Download All
-        </button>
-      </div>
-
-      <div className="flex gap-1 p-1 rounded-xl bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/8%)] mb-6 overflow-x-auto">
-        {calendar.days.map((day) => (
-          <button
-            key={day.day}
-            onClick={() => setActiveDay(day.day)}
-            className={`flex-1 min-w-[64px] py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-              activeDay === day.day
-                ? "bg-gradient-to-r from-[oklch(0.78_0.154_194.77/20%)] to-[oklch(0.72_0.14_180/20%)] text-[oklch(0.78_0.154_194.77)] border border-[oklch(0.78_0.154_194.77/30%)]"
-                : "text-[oklch(0.55_0.01_260)] hover:text-[oklch(0.93_0.005_260)] hover:bg-[oklch(1_0_0/4%)]"
-            }`}
-          >
-            <span className="hidden sm:inline">Day {day.day}</span>
-            <span className="sm:hidden">D{day.day}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-4">
-        <h4 className="text-base font-semibold text-[oklch(0.93_0.005_260)]">{currentDay.label}</h4>
-        <p className="text-sm text-[oklch(0.55_0.01_260)]">{currentDay.description}</p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        {currentDay.pieces.map((piece, i) => (
-          <ContentCard key={`${currentDay.day}-${i}`} piece={piece} index={i} showToast={showToast} />
-        ))}
-      </div>
-    </div>
-  );
-}
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [inputValue, setInputValue] = useState("");
-  const [inputType, setInputType] = useState<"youtube" | "topic">("topic");
-  const [calendar, setCalendar] = useState<ContentCalendar | null>(null);
-  const [showEmailGate, setShowEmailGate] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [email, setEmail] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [error, setError] = useState("");
-  const loadingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const { show: showToast, ToastUI } = useToast();
+  const [result, setResult] = useState<ContentCalendar | null>(null);
+  const [activeDay, setActiveDay] = useState(0);
+  const [activePlatform, setActivePlatform] = useState("LinkedIn");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const toolRef = useRef<HTMLDivElement>(null);
 
-  const detectInputType = useCallback((value: string) => {
-    const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
-    setInputType(ytRegex.test(value.trim()) ? "youtube" : "topic");
+  const showToast = useCallback((msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setInputValue(e.target.value);
-      detectInputType(e.target.value);
-      if (error) setError("");
-    },
-    [detectInputType, error]
-  );
+  const scrollToTool = () => toolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  const handleGenerate = useCallback(() => {
-    if (!inputValue.trim()) {
-      setError("Please enter a YouTube URL or content topic");
-      return;
-    }
-    setShowEmailGate(true);
-    setCalendar(null);
-    setError("");
-  }, [inputValue]);
+  const handleGenerate = useCallback(async () => {
+    if (!input.trim()) { showToast("Enter a YouTube URL or topic first", false); return; }
+    setIsGenerating(true); setLoadingStep(0); setResult(null);
+    const interval = setInterval(() => setLoadingStep(p => Math.min(p + 1, LOADING_MSGS.length - 1)), 8000);
+    try {
+      const isYT = input.includes("youtube.com") || input.includes("youtu.be");
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: input.trim(), inputType: isYT ? "youtube" : "topic", email: email.trim() || undefined }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({ error: "Error" })); throw new Error(e.error || `HTTP ${res.status}`); }
+      const data: ContentCalendar = await res.json();
+      setResult(data); setActiveDay(0); setActivePlatform("LinkedIn");
+      showToast("5-day content calendar ready");
+      setTimeout(() => toolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Generation failed", false);
+    } finally { clearInterval(interval); setIsGenerating(false); }
+  }, [input, email, showToast]);
 
-  const handleEmailSubmit = useCallback(
-    async (email: string) => {
-      const captures = JSON.parse(localStorage.getItem("cm_emails") || "[]");
-      captures.push({ email, input: inputValue, inputType, timestamp: Date.now() });
-      localStorage.setItem("cm_emails", JSON.stringify(captures));
+  const handleCopy = useCallback((content: string, id: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedId(id); showToast("Copied to clipboard");
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  }, [showToast]);
 
-      setIsLoading(true);
-      setLoadingStep(0);
-      loadingInterval.current = setInterval(() => {
-        setLoadingStep((prev) => (prev >= LOADING_STEPS.length - 1 ? prev : prev + 1));
-      }, 4000);
+  const handleDownloadAll = useCallback(() => {
+    if (!result) return;
+    let text = `CONTENT MATRIX — 5-Day Calendar\nTopic: ${result.topic}\nGenerated: ${new Date(result.generatedAt).toLocaleDateString()}\n\n${"=".repeat(60)}\n\n`;
+    result.days.forEach(day => {
+      text += `DAY ${day.day}: ${day.label.toUpperCase()}\n${day.description}\n${"-".repeat(40)}\n\n`;
+      day.pieces.forEach((p: ContentPiece) => { text += `[${p.platform.toUpperCase()} — ${p.type}]\n${p.title}\n\n${p.content}\n\n${"-".repeat(40)}\n\n`; });
+    });
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `content-matrix-${Date.now()}.txt`; a.click();
+    URL.revokeObjectURL(url); showToast("Downloaded all content");
+  }, [result, showToast]);
 
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: inputValue.trim(), inputType }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Generation failed");
-        setCalendar(data);
-        setShowEmailGate(false);
-        showToast("Content calendar generated!");
-        setTimeout(() => {
-          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 200);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to generate content. Please try again.";
-        setError(msg);
-        setShowEmailGate(false);
-        showToast(msg, "error");
-      } finally {
-        if (loadingInterval.current) clearInterval(loadingInterval.current);
-        setIsLoading(false);
-      }
-    },
-    [inputValue, inputType, showToast]
-  );
+  const currentDay = result?.days[activeDay];
+  const currentPiece = currentDay?.pieces.find((p: ContentPiece) => p.platform === activePlatform);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => { if (e.key === "Enter") handleGenerate(); },
-    [handleGenerate]
-  );
-
-  const handleReset = useCallback(() => {
-    setCalendar(null);
-    setInputValue("");
-    setShowEmailGate(false);
-    setError("");
-    setInputType("topic");
-  }, []);
+  const V = "#6366f1"; // violet primary
+  const BG = "#080810"; // background
 
   return (
-    <div className="min-h-screen flex flex-col bg-[oklch(0.07_0.005_260)]">
-      <ToastUI />
+    <div style={{ backgroundColor: BG, color: "#E8E8F0", minHeight: "100vh", fontFamily: "'IBM Plex Sans', sans-serif", overflowX: "hidden" }}>
 
-      {/* Header */}
-      <header className="border-b border-[oklch(1_0_0/8%)] bg-[oklch(0.07_0.005_260/80%)] backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
-          <div className="flex items-center gap-3">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-[oklch(0.78_0.154_194.77)] to-[oklch(0.72_0.14_180)] flex items-center justify-center shrink-0">
-              <Layers className="h-4 w-4 text-black" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-semibold text-sm text-[oklch(0.93_0.005_260)] tracking-tight leading-none">Content Repurposing Matrix</span>
-              <span className="text-[10px] text-[oklch(0.55_0.01_260)] leading-none mt-0.5 hidden sm:block">Turn one idea into 30+ pieces of content</span>
-            </div>
-          </div>
-          <a href="https://LosSilva.com" target="_blank" rel="noopener noreferrer" className="text-xs text-[oklch(0.55_0.01_260)] hover:text-[oklch(0.93_0.005_260)] transition-colors">
-            by ELIOS
-          </a>
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: "fixed", bottom: "28px", right: "28px", zIndex: 9999, padding: "14px 22px", borderRadius: "12px", background: toast.ok ? "rgba(99,102,241,0.12)" : "rgba(239,68,68,0.12)", border: `1px solid ${toast.ok ? "rgba(99,102,241,0.35)" : "rgba(239,68,68,0.35)"}`, backdropFilter: "blur(20px)", color: toast.ok ? "#a5b4fc" : "#fca5a5", fontSize: "14px", fontWeight: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.5)", animation: "slideUp 0.3s ease" }}>
+          {toast.msg}
         </div>
-      </header>
+      )}
 
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-[oklch(0.78_0.154_194.77/3%)] via-transparent to-transparent pointer-events-none" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[oklch(0.78_0.154_194.77/4%)] rounded-full blur-[120px] pointer-events-none" />
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 relative py-16 sm:py-24">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-[oklch(0.78_0.154_194.77/20%)] bg-[oklch(0.78_0.154_194.77/6%)] px-3 py-1 text-xs font-medium text-[oklch(0.78_0.154_194.77)] mb-6">
-              <Zap className="h-3 w-3" />
-              Free AI-Powered Tool
+      {/* NAVBAR */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: "64px", display: "flex", alignItems: "center", background: "rgba(8,8,16,0.75)", backdropFilter: "blur(24px)", borderBottom: "1px solid rgba(99,102,241,0.1)" }}>
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(99,102,241,0.4)", flexShrink: 0 }}>
+              <span style={{ fontSize: "13px", fontWeight: 800, color: "#fff" }}>CM</span>
             </div>
-            <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-[oklch(0.93_0.005_260)] mb-4 leading-[1.1]">
-              Content Repurposing<br />
-              <span className="bg-gradient-to-r from-[oklch(0.78_0.154_194.77)] to-[oklch(0.72_0.14_180)] bg-clip-text text-transparent">Matrix</span>
+            <span style={{ fontSize: "16px", fontWeight: 700, color: "#E8E8F0", letterSpacing: "-0.02em" }}>Content Matrix</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+            <span style={{ fontSize: "13px", color: "rgba(232,232,240,0.35)" }}>Free tool by ELIOS</span>
+            <button onClick={scrollToTool} style={{ padding: "9px 22px", borderRadius: "8px", border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", fontSize: "13px", fontWeight: 700, boxShadow: "0 0 20px rgba(99,102,241,0.3)", transition: "all 0.2s ease" }}
+              onMouseEnter={e => { const el = e.currentTarget; el.style.transform = "translateY(-1px)"; el.style.boxShadow = "0 0 30px rgba(99,102,241,0.5)"; }}
+              onMouseLeave={e => { const el = e.currentTarget; el.style.transform = "translateY(0)"; el.style.boxShadow = "0 0 20px rgba(99,102,241,0.3)"; }}>
+              Try free
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* HERO */}
+      <section style={{ position: "relative", minHeight: "100vh", display: "flex", alignItems: "center", paddingTop: "64px", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(99,102,241,0.22) 0%, transparent 60%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(139,92,246,0.12) 0%, transparent 50%), radial-gradient(ellipse 40% 40% at 20% 60%, rgba(79,70,229,0.08) 0%, transparent 50%)", animation: "meshPulse 8s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(99,102,241,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.035) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
+        <ParticleCanvas />
+        <div style={{ position: "absolute", top: "20%", left: "8%", width: "500px", height: "500px", borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%)", animation: "float 7s ease-in-out infinite", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: "15%", right: "8%", width: "350px", height: "350px", borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)", animation: "float 9s ease-in-out infinite reverse", pointerEvents: "none" }} />
+
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem", position: "relative", zIndex: 1, width: "100%" }}>
+          <div style={{ maxWidth: "880px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 16px", borderRadius: "100px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", marginBottom: "32px", backdropFilter: "blur(10px)" }}>
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#6366f1", boxShadow: "0 0 8px rgba(99,102,241,0.8)", animation: "livePulse 2s ease-in-out infinite" }} />
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.06em", textTransform: "uppercase" }}>Free AI Content Engine</span>
+            </div>
+
+            <h1 style={{ fontWeight: 800, fontSize: "clamp(3rem, 7.5vw, 7rem)", lineHeight: 0.97, letterSpacing: "-0.04em", marginBottom: "28px", color: "#E8E8F0" }}>
+              One idea.{" "}
+              <span style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 40%, #a78bfa 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                30+ pieces
+              </span>
+              {" "}of content.
             </h1>
-            <p className="text-base sm:text-lg text-[oklch(0.55_0.01_260)] max-w-xl mx-auto mb-10 leading-relaxed">
-              Turn one idea into 30+ pieces of content. Enter a YouTube URL or topic and get a complete 5-day content calendar, ready to publish.
+
+            <p style={{ fontSize: "clamp(1rem, 2vw, 1.2rem)", color: "rgba(232,232,240,0.5)", maxWidth: "560px", lineHeight: 1.7, marginBottom: "48px", fontWeight: 400 }}>
+              Paste a YouTube URL or topic. Get a complete 5-day content calendar for LinkedIn, X, Instagram, TikTok, Email, Blog, and Podcast. Platform-native. Ready to post.
             </p>
 
-            <div className="max-w-2xl mx-auto">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[oklch(0.4_0.008_260)]">
-                    {inputType === "youtube" ? <Youtube className="h-4 w-4 text-red-400" /> : <Lightbulb className="h-4 w-4 text-amber-400" />}
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center", marginBottom: "80px" }}>
+              <button onClick={scrollToTool} style={{ padding: "16px 36px", borderRadius: "12px", border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", fontSize: "16px", fontWeight: 700, boxShadow: "0 0 40px rgba(99,102,241,0.4), 0 4px 20px rgba(0,0,0,0.3)", transition: "all 0.2s ease", letterSpacing: "-0.01em" }}
+                onMouseEnter={e => { const el = e.currentTarget; el.style.transform = "translateY(-2px)"; el.style.boxShadow = "0 0 60px rgba(99,102,241,0.6), 0 8px 30px rgba(0,0,0,0.4)"; }}
+                onMouseLeave={e => { const el = e.currentTarget; el.style.transform = "translateY(0)"; el.style.boxShadow = "0 0 40px rgba(99,102,241,0.4), 0 4px 20px rgba(0,0,0,0.3)"; }}>
+                Generate my calendar
+              </button>
+              <span style={{ fontSize: "13px", color: "rgba(232,232,240,0.3)" }}>No account. No credit card. Free forever.</span>
+            </div>
+
+            <div style={{ display: "flex", gap: "0", flexWrap: "wrap" }}>
+              {[{ val: 30, suf: "+", label: "Pieces per topic" }, { val: 7, suf: "", label: "Platforms covered" }, { val: 5, suf: "", label: "Days of content" }].map((s, i) => (
+                <div key={s.label} style={{ display: "flex", alignItems: "stretch" }}>
+                  {i > 0 && <div style={{ width: "1px", background: "rgba(99,102,241,0.2)", margin: "0 32px" }} />}
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "2.5rem", background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1 }}>
+                      <AnimatedNumber target={s.val} suffix={s.suf} />
+                    </div>
+                    <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.35)", marginTop: "4px", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" }}>{s.label}</div>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Paste a YouTube URL or enter a topic..."
-                    value={inputValue}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    className="w-full h-12 pl-10 pr-4 rounded-xl bg-[oklch(1_0_0/5%)] border border-[oklch(1_0_0/10%)] text-[oklch(0.93_0.005_260)] placeholder:text-[oklch(0.4_0.008_260)] text-sm focus:outline-none focus:border-[oklch(0.78_0.154_194.77/50%)] focus:ring-1 focus:ring-[oklch(0.78_0.154_194.77/20%)] transition-all"
-                  />
                 </div>
-                <button
-                  onClick={handleGenerate}
-                  disabled={!inputValue.trim() || isLoading}
-                  className="h-12 px-6 rounded-xl bg-gradient-to-r from-[oklch(0.78_0.154_194.77)] to-[oklch(0.72_0.14_180)] text-black font-semibold text-sm transition-all duration-200 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shrink-0"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Generate
-                  <ArrowRight className="h-4 w-4" />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ position: "absolute", bottom: "40px", left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", animation: "bounce 2s ease-in-out infinite" }}>
+          <div style={{ width: "1px", height: "48px", background: "linear-gradient(to bottom, rgba(99,102,241,0.6), transparent)" }} />
+        </div>
+      </section>
+
+      {/* GRADIENT DIVIDER */}
+      <div style={{ height: "1px", background: "linear-gradient(90deg, transparent, rgba(99,102,241,0.5), rgba(139,92,246,0.5), transparent)" }} />
+
+      {/* TICKER */}
+      <div style={{ background: "rgba(99,102,241,0.05)", borderBottom: "1px solid rgba(99,102,241,0.1)", padding: "14px 0", overflow: "hidden" }}>
+        <div style={{ display: "flex", animation: "ticker 30s linear infinite", width: "max-content" }}>
+          {[...Array(4)].flatMap((_, i) => PLATFORMS.map(p => (
+            <span key={`${p.id}-${i}`} style={{ fontWeight: 700, fontSize: "12px", color: p.color, padding: "0 28px", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", opacity: 0.75 }}>
+              {p.label} &nbsp; ✦
+            </span>
+          )))}
+        </div>
+      </div>
+
+      {/* HOW IT WORKS */}
+      <section style={{ padding: "120px 0", position: "relative" }}>
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(99,102,241,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem" }}>
+          <RevealOnScroll>
+            <div style={{ marginBottom: "80px", textAlign: "center" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "5px 14px", borderRadius: "100px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: "20px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>How it works</span>
+              </div>
+              <h2 style={{ fontWeight: 800, fontSize: "clamp(2rem, 4vw, 3.5rem)", letterSpacing: "-0.03em", color: "#E8E8F0" }}>Three steps. Five days of content.</h2>
+            </div>
+          </RevealOnScroll>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+            {STEPS.map((step, i) => (
+              <RevealOnScroll key={step.num} delay={i * 150}>
+                <TiltCard style={{ padding: "48px 40px", background: i === 1 ? "linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.07))" : "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.12)", borderTop: i === 1 ? "2px solid #6366f1" : "2px solid rgba(99,102,241,0.2)", borderRadius: "16px", position: "relative", overflow: "hidden", backdropFilter: "blur(10px)" }}>
+                  <div style={{ position: "absolute", top: "-20px", right: "-10px", fontWeight: 800, fontSize: "8rem", color: "rgba(99,102,241,0.06)", lineHeight: 1, userSelect: "none", pointerEvents: "none" }}>{step.num}</div>
+                  <div style={{ fontSize: "2.2rem", marginBottom: "20px" }}>{step.icon}</div>
+                  <h3 style={{ fontWeight: 700, fontSize: "1.4rem", color: "#E8E8F0", marginBottom: "12px", letterSpacing: "-0.02em" }}>{step.title}</h3>
+                  <p style={{ fontSize: "15px", color: "rgba(232,232,240,0.5)", lineHeight: 1.7 }}>{step.body}</p>
+                </TiltCard>
+              </RevealOnScroll>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PLATFORMS */}
+      <section style={{ padding: "120px 0", background: "rgba(255,255,255,0.01)", borderTop: "1px solid rgba(99,102,241,0.08)", borderBottom: "1px solid rgba(99,102,241,0.08)" }}>
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "80px", alignItems: "center" }}>
+            <RevealOnScroll>
+              <div>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "5px 14px", borderRadius: "100px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: "20px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>What you get</span>
+                </div>
+                <h2 style={{ fontWeight: 800, fontSize: "clamp(2rem, 4vw, 3.5rem)", letterSpacing: "-0.03em", color: "#E8E8F0", marginBottom: "20px" }}>Seven platforms.<br />One input.</h2>
+                <p style={{ fontSize: "16px", color: "rgba(232,232,240,0.5)", lineHeight: 1.7, marginBottom: "36px", maxWidth: "420px" }}>Each platform gets content written for how that platform actually works. Not the same post reformatted seven times.</p>
+                <button onClick={scrollToTool} style={{ padding: "13px 28px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.4)", color: "#a5b4fc", fontSize: "14px", fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em", transition: "all 0.2s ease" }}
+                  onMouseEnter={e => { const el = e.currentTarget; el.style.background = "rgba(99,102,241,0.1)"; el.style.borderColor = "rgba(99,102,241,0.6)"; }}
+                  onMouseLeave={e => { const el = e.currentTarget; el.style.background = "transparent"; el.style.borderColor = "rgba(99,102,241,0.4)"; }}>
+                  See it in action
                 </button>
               </div>
-              {error && <p className="text-xs text-red-400 mt-2 text-left">{error}</p>}
-              <p className="text-xs text-[oklch(0.4_0.008_260)] mt-3">
-                {inputType === "youtube" ? "YouTube URL detected. We will analyze the video topic." : "Enter any topic, niche, or idea to generate content around."}
-              </p>
+            </RevealOnScroll>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              {PLATFORMS.map((p, i) => (
+                <RevealOnScroll key={p.id} delay={i * 70}>
+                  <TiltCard style={{ padding: "20px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", backdropFilter: "blur(10px)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: `${p.color}20`, border: `1px solid ${p.color}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <span style={{ fontSize: "11px", fontWeight: 800, color: p.color }}>{p.short}</span>
+                      </div>
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: "#E8E8F0" }}>{p.label}</span>
+                    </div>
+                    <p style={{ fontSize: "12px", color: "rgba(232,232,240,0.4)", lineHeight: 1.5 }}>{p.desc}</p>
+                  </TiltCard>
+                </RevealOnScroll>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {/* Feature cards */}
-      {!showEmailGate && !calendar && !isLoading && (
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {[
-              { icon: Calendar, title: "5-Day Calendar", desc: "Structured daily content plan with platform-specific pieces" },
-              { icon: Layers, title: "30+ Pieces", desc: "LinkedIn, Twitter, Instagram, TikTok, Email, Blog, Podcast" },
-              { icon: Zap, title: "Ready to Publish", desc: "Copy any piece directly. Download everything at once." },
-            ].map((f) => (
-              <div key={f.title} className="rounded-xl border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/2%)] p-5 text-center">
-                <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[oklch(1_0_0/4%)] mb-3">
-                  <f.icon className="h-5 w-5 text-[oklch(0.78_0.154_194.77)]" />
-                </div>
-                <h3 className="text-sm font-semibold text-[oklch(0.93_0.005_260)] mb-1">{f.title}</h3>
-                <p className="text-xs text-[oklch(0.55_0.01_260)] leading-relaxed">{f.desc}</p>
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: "120px 0" }}>
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem" }}>
+          <RevealOnScroll>
+            <div style={{ textAlign: "center", marginBottom: "80px" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "5px 14px", borderRadius: "100px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: "20px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>What people say</span>
               </div>
+              <h2 style={{ fontWeight: 800, fontSize: "clamp(2rem, 4vw, 3.5rem)", letterSpacing: "-0.03em", color: "#E8E8F0" }}>Built for people who actually ship.</h2>
+            </div>
+          </RevealOnScroll>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px", marginBottom: "64px" }}>
+            {TESTIMONIALS.map((t, i) => (
+              <RevealOnScroll key={i} delay={i * 120}>
+                <TiltCard style={{ padding: "36px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.12)", borderRadius: "16px", backdropFilter: "blur(20px)" }}>
+                  <div style={{ fontSize: "2.5rem", color: "#6366f1", opacity: 0.35, lineHeight: 1, marginBottom: "16px", fontFamily: "serif" }}>"</div>
+                  <p style={{ fontSize: "15px", color: "rgba(232,232,240,0.72)", lineHeight: 1.75, marginBottom: "28px", fontStyle: "italic" }}>{t.quote}</p>
+                  <div style={{ height: "1px", background: "rgba(99,102,241,0.15)", marginBottom: "20px" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 800, color: "#fff", flexShrink: 0 }}>{t.avatar}</div>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: 700, color: "#E8E8F0" }}>{t.name}</div>
+                      <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.35)", marginTop: "1px" }}>{t.role}</div>
+                    </div>
+                  </div>
+                </TiltCard>
+              </RevealOnScroll>
             ))}
           </div>
-        </section>
-      )}
-
-      {/* Main content area */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 flex-1 pb-16" ref={resultsRef}>
-        {showEmailGate && !isLoading && !calendar && <EmailGate onSubmit={handleEmailSubmit} loading={isLoading} />}
-        {isLoading && <LoadingState step={loadingStep} />}
-        {calendar && (
-          <div>
-            <CalendarResults calendar={calendar} showToast={showToast} />
-            <div className="mt-8 text-center">
-              <button
-                onClick={handleReset}
-                className="inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/3%)] text-[oklch(0.93_0.005_260)] text-sm font-medium hover:bg-[oklch(1_0_0/6%)] hover:border-[oklch(1_0_0/14%)] transition-all"
-              >
-                <Sparkles className="h-4 w-4 text-[oklch(0.78_0.154_194.77)]" />
-                Generate Another Calendar
-              </button>
+          <RevealOnScroll>
+            <div style={{ padding: "48px 60px", background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.05))", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "20px", backdropFilter: "blur(20px)", display: "flex", gap: "0", flexWrap: "wrap", justifyContent: "space-around", alignItems: "center" }}>
+              {[{ val: 4, suf: "hrs", label: "Saved per session" }, { val: 30, suf: "+", label: "Pieces per topic" }, { val: 7, suf: "", label: "Platforms covered" }, { val: 0, suf: "", label: "Cost to use it", prefix: "$" }].map((s) => (
+                <div key={s.label} style={{ textAlign: "center", padding: "16px 32px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "3.5rem", background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1 }}>
+                    {s.prefix || ""}<AnimatedNumber target={s.val} suffix={s.suf} />
+                  </div>
+                  <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.35)", marginTop: "6px", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" }}>{s.label}</div>
+                </div>
+              ))}
             </div>
-          </div>
-        )}
-      </main>
+          </RevealOnScroll>
+        </div>
+      </section>
 
-      {/* Footer */}
-      <footer className="border-t border-[oklch(1_0_0/8%)] bg-[oklch(0.07_0.005_260/80%)] backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 py-6">
-          <div className="flex items-center gap-2 text-sm text-[oklch(0.55_0.01_260)]">
-            <span>Powered by</span>
-            <a href="https://LosSilva.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-[oklch(0.93_0.005_260)] hover:text-[oklch(0.78_0.154_194.77)] transition-colors">
+      {/* THE TOOL */}
+      <section ref={toolRef} style={{ padding: "120px 0", background: "rgba(99,102,241,0.025)", borderTop: "1px solid rgba(99,102,241,0.1)" }} id="tool">
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem" }}>
+          <RevealOnScroll>
+            <div style={{ marginBottom: "64px" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "5px 14px", borderRadius: "100px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: "20px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>The Tool</span>
+              </div>
+              <h2 style={{ fontWeight: 800, fontSize: "clamp(2rem, 4vw, 3.5rem)", letterSpacing: "-0.03em", color: "#E8E8F0", marginBottom: "16px" }}>Generate your content calendar.</h2>
+              <p style={{ fontSize: "16px", color: "rgba(232,232,240,0.45)", maxWidth: "480px" }}>Paste a YouTube URL or type a topic. Hit generate. Your 5-day calendar is ready in about 60 seconds.</p>
+            </div>
+          </RevealOnScroll>
+
+          <RevealOnScroll>
+            <div style={{ maxWidth: "680px", padding: "40px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "16px", backdropFilter: "blur(20px)", marginBottom: "48px", boxShadow: "0 0 60px rgba(99,102,241,0.07)" }}>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>YouTube URL or Topic</label>
+                <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !isGenerating && handleGenerate()} placeholder="e.g. youtube.com/watch?v=... or 'How to build a personal brand'"
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", transition: "border-color 0.2s ease, box-shadow 0.2s ease", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
+                  onFocus={e => { e.target.style.borderColor = "rgba(99,102,241,0.6)"; e.target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)"; }}
+                  onBlur={e => { e.target.style.borderColor = "rgba(99,102,241,0.2)"; e.target.style.boxShadow = "none"; }} />
+              </div>
+              <div style={{ marginBottom: "28px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Email (optional)</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com"
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", transition: "border-color 0.2s ease, box-shadow 0.2s ease", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
+                  onFocus={e => { e.target.style.borderColor = "rgba(99,102,241,0.6)"; e.target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)"; }}
+                  onBlur={e => { e.target.style.borderColor = "rgba(99,102,241,0.2)"; e.target.style.boxShadow = "none"; }} />
+              </div>
+              <button onClick={handleGenerate} disabled={isGenerating || !input.trim()}
+                style={{ width: "100%", padding: "17px", borderRadius: "10px", border: "none", cursor: isGenerating || !input.trim() ? "not-allowed" : "pointer", background: isGenerating || !input.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", fontSize: "16px", fontWeight: 700, fontFamily: "'IBM Plex Sans', sans-serif", boxShadow: isGenerating || !input.trim() ? "none" : "0 0 40px rgba(99,102,241,0.3)", transition: "all 0.2s ease", opacity: isGenerating || !input.trim() ? 0.6 : 1, letterSpacing: "-0.01em" }}
+                onMouseEnter={e => { if (!isGenerating && input.trim()) { const el = e.currentTarget; el.style.transform = "translateY(-1px)"; el.style.boxShadow = "0 0 60px rgba(99,102,241,0.5)"; }}}
+                onMouseLeave={e => { const el = e.currentTarget; el.style.transform = "translateY(0)"; if (!isGenerating && input.trim()) el.style.boxShadow = "0 0 40px rgba(99,102,241,0.3)"; }}>
+                {isGenerating ? (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
+                    <span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                    {LOADING_MSGS[loadingStep]}
+                  </span>
+                ) : "Generate 5-Day Content Calendar"}
+              </button>
+              {isGenerating && (
+                <div style={{ marginTop: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>Building your calendar...</span>
+                    <span style={{ fontSize: "11px", color: "#a5b4fc", fontFamily: "monospace" }}>~60 seconds</span>
+                  </div>
+                  <div style={{ height: "3px", background: "rgba(99,102,241,0.15)", borderRadius: "2px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", background: "linear-gradient(90deg, #6366f1, #8b5cf6)", width: `${Math.min(((loadingStep + 1) / LOADING_MSGS.length) * 100, 95)}%`, transition: "width 1s ease", borderRadius: "2px", boxShadow: "0 0 10px rgba(99,102,241,0.6)" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </RevealOnScroll>
+
+          {/* RESULTS */}
+          {result && (
+            <div style={{ animation: "slideUp 0.5s ease" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "32px", flexWrap: "wrap", gap: "16px" }}>
+                <div>
+                  <h3 style={{ fontWeight: 700, fontSize: "1.5rem", color: "#E8E8F0", letterSpacing: "-0.02em", marginBottom: "4px" }}>Your 5-Day Calendar</h3>
+                  <p style={{ fontSize: "13px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>{result.topic.length > 60 ? result.topic.slice(0, 60) + "..." : result.topic}</p>
+                </div>
+                <button onClick={handleDownloadAll} style={{ padding: "10px 22px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                  Download All
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "16px", overflowX: "auto", paddingBottom: "4px" }}>
+                {result.days.map((day, i) => (
+                  <button key={i} onClick={() => setActiveDay(i)}
+                    style={{ padding: "10px 20px", borderRadius: "8px", border: "none", cursor: "pointer", background: activeDay === i ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "rgba(255,255,255,0.04)", color: activeDay === i ? "#fff" : "rgba(232,232,240,0.45)", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", transition: "all 0.15s ease", boxShadow: activeDay === i ? "0 0 20px rgba(99,102,241,0.3)" : "none" }}>
+                    Day {day.day}
+                  </button>
+                ))}
+              </div>
+
+              {currentDay && (
+                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "16px", overflow: "hidden", backdropFilter: "blur(20px)" }}>
+                  <div style={{ padding: "20px 28px", borderBottom: "1px solid rgba(99,102,241,0.1)", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap", background: "rgba(99,102,241,0.04)" }}>
+                    <div style={{ fontWeight: 800, fontSize: "1.75rem", background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Day {currentDay.day}</div>
+                    <div style={{ width: "1px", height: "28px", background: "rgba(99,102,241,0.2)", flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: "15px", color: "#E8E8F0" }}>{currentDay.label}</div>
+                      <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.35)", marginTop: "2px", fontFamily: "monospace" }}>{currentDay.description}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid rgba(99,102,241,0.1)", background: "rgba(0,0,0,0.2)" }}>
+                    {PLATFORMS.map(platform => {
+                      const piece = currentDay.pieces.find((p: ContentPiece) => p.platform === platform.id);
+                      if (!piece) return null;
+                      return (
+                        <button key={platform.id} onClick={() => setActivePlatform(platform.id)}
+                          style={{ padding: "14px 20px", border: "none", cursor: "pointer", background: "transparent", color: activePlatform === platform.id ? platform.color : "rgba(232,232,240,0.35)", fontSize: "13px", fontWeight: activePlatform === platform.id ? 700 : 500, whiteSpace: "nowrap", borderBottom: activePlatform === platform.id ? `2px solid ${platform.color}` : "2px solid transparent", transition: "all 0.15s ease" }}>
+                          {platform.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {currentPiece && (
+                    <div style={{ padding: "32px 28px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "monospace" }}>{currentPiece.type}</span>
+                          <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.25)", fontFamily: "monospace" }}>{currentPiece.content.length} chars</span>
+                        </div>
+                        <button onClick={() => handleCopy(currentPiece.content, `${activeDay}-${activePlatform}`)}
+                          style={{ padding: "8px 18px", borderRadius: "6px", background: copiedId === `${activeDay}-${activePlatform}` ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "transparent", border: "1px solid rgba(99,102,241,0.4)", color: copiedId === `${activeDay}-${activePlatform}` ? "#fff" : "#a5b4fc", fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.15s ease" }}
+                          onMouseEnter={e => { if (copiedId !== `${activeDay}-${activePlatform}`) e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
+                          onMouseLeave={e => { if (copiedId !== `${activeDay}-${activePlatform}`) e.currentTarget.style.background = "transparent"; }}>
+                          {copiedId === `${activeDay}-${activePlatform}` ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(99,102,241,0.1)", borderTop: "2px solid rgba(99,102,241,0.3)", borderRadius: "10px", padding: "28px", maxHeight: "520px", overflowY: "auto" }}>
+                        <pre style={{ fontFamily: "'IBM Plex Mono', 'JetBrains Mono', monospace", fontSize: "13.5px", lineHeight: 1.85, whiteSpace: "pre-wrap", color: "rgba(232,232,240,0.82)", margin: 0 }}>{currentPiece.content}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer style={{ borderTop: "1px solid rgba(99,102,241,0.1)", padding: "48px 0", background: "rgba(0,0,0,0.3)" }}>
+        <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 2rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(99,102,241,0.3)", flexShrink: 0 }}>
+              <span style={{ fontSize: "13px", fontWeight: 800, color: "#fff" }}>CM</span>
+            </div>
+            <span style={{ fontSize: "16px", fontWeight: 700, color: "#E8E8F0", letterSpacing: "-0.02em" }}>Content Matrix</span>
+          </div>
+          <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.35)" }}>
+            Powered by{" "}
+            <a href="https://LosSilva.com" target="_blank" rel="noopener noreferrer" style={{ color: "#a5b4fc", textDecoration: "none", fontWeight: 700, transition: "color 0.2s ease" }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.color = "#6366f1"; }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.color = "#a5b4fc"; }}>
               ELIOS
             </a>
           </div>
-          <p className="text-xs text-[oklch(0.4_0.008_260)]">Free content repurposing tool. No credit card required.</p>
+          <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.2)", fontFamily: "monospace" }}>Free. No credit card. No account.</div>
         </div>
       </footer>
+
+      <style>{`
+        @keyframes meshPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
+        @keyframes livePulse { 0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.8); } 50% { box-shadow: 0 0 16px rgba(99,102,241,1), 0 0 24px rgba(99,102,241,0.4); } }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(8px); } }
+        input::placeholder { color: rgba(232,232,240,0.2) !important; }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #080810; }
+        ::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8b5cf6; }
+        @media (max-width: 900px) {
+          section div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; gap: 40px !important; }
+        }
+      `}</style>
     </div>
   );
 }
