@@ -19,6 +19,10 @@ function ParticleCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Use non-null assertion via local const to satisfy TypeScript strict mode
+    const c: HTMLCanvasElement = canvas;
+    const cx: CanvasRenderingContext2D = ctx;
+
     let animId: number;
     let w = 0, h = 0;
 
@@ -30,8 +34,8 @@ function ParticleCanvas() {
     const colors = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8"];
 
     function resize() {
-      w = canvas.width = canvas.offsetWidth;
-      h = canvas.height = canvas.offsetHeight;
+      w = c.width = c.offsetWidth;
+      h = c.height = c.offsetHeight;
     }
 
     function init() {
@@ -51,29 +55,29 @@ function ParticleCanvas() {
     }
 
     function draw() {
-      ctx.clearRect(0, 0, w, h);
+      cx.clearRect(0, 0, w, h);
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < 130) {
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 * (1 - dist / 130)})`;
-            ctx.lineWidth = 0.5;
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
+            cx.beginPath();
+            cx.strokeStyle = `rgba(99, 102, 241, ${0.1 * (1 - dist / 130)})`;
+            cx.lineWidth = 0.5;
+            cx.moveTo(particles[i].x, particles[i].y);
+            cx.lineTo(particles[j].x, particles[j].y);
+            cx.stroke();
           }
         }
       }
       for (const p of particles) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = p.alpha;
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        cx.beginPath();
+        cx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        cx.fillStyle = p.color;
+        cx.globalAlpha = p.alpha;
+        cx.fill();
+        cx.globalAlpha = 1;
         p.x += p.vx;
         p.y += p.vy;
         if (p.x < 0) p.x = w;
@@ -86,7 +90,7 @@ function ParticleCanvas() {
 
     resize(); init(); draw();
     const ro = new ResizeObserver(() => { resize(); init(); });
-    ro.observe(canvas);
+    ro.observe(c);
     return () => { cancelAnimationFrame(animId); ro.disconnect(); };
   }, []);
 
