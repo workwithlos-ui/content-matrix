@@ -1,5 +1,5 @@
 /*
- * DESIGN SYSTEM: "Obsidian Signal" — $100M Quality
+ * DESIGN SYSTEM: "Obsidian Signal" - $100M Quality
  * Deep space black (#080810) + electric violet/indigo gradients
  * Canvas particles, glassmorphism, 3D tilt, scroll reveals, micro-interactions
  * Fonts: Clash Display (display) + Satoshi/IBM Plex Sans (body) + JetBrains Mono (code)
@@ -152,23 +152,33 @@ function RevealOnScroll({ children, delay = 0 }: { children: React.ReactNode; de
 function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: string }) {
   const [val, setVal] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
+  const hasAnimated = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const runAnimation = () => {
+      if (hasAnimated.current) return;
+      hasAnimated.current = true;
+      let start = 0;
+      const step = target / 55;
+      const timer = setInterval(() => {
+        start += step;
+        if (start >= target) { setVal(target); clearInterval(timer); }
+        else setVal(Math.floor(start));
+      }, 16);
+    };
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        let start = 0;
-        const step = target / 55;
-        const timer = setInterval(() => {
-          start += step;
-          if (start >= target) { setVal(target); clearInterval(timer); }
-          else setVal(Math.floor(start));
-        }, 16);
+        runAnimation();
         obs.disconnect();
       }
-    }, { threshold: 0.5 });
+    }, { threshold: 0.1 });
     obs.observe(el);
-    return () => obs.disconnect();
+    // Fallback: if element is already visible on load, animate after a short delay
+    const fallback = setTimeout(() => {
+      if (!hasAnimated.current) runAnimation();
+    }, 1500);
+    return () => { obs.disconnect(); clearTimeout(fallback); };
   }, [target]);
   return <span ref={ref}>{val}{suffix}</span>;
 }
@@ -258,10 +268,10 @@ export default function App() {
 
   const handleDownloadAll = useCallback(() => {
     if (!result) return;
-    let text = `CONTENT MATRIX — 5-Day Calendar\nTopic: ${result.topic}\nGenerated: ${new Date(result.generatedAt).toLocaleDateString()}\n\n${"=".repeat(60)}\n\n`;
+    let text = `CONTENT MATRIX - 5-Day Calendar\nTopic: ${result.topic}\nGenerated: ${new Date(result.generatedAt).toLocaleDateString()}\n\n${"=".repeat(60)}\n\n`;
     result.days.forEach(day => {
       text += `DAY ${day.day}: ${day.label.toUpperCase()}\n${day.description}\n${"-".repeat(40)}\n\n`;
-      day.pieces.forEach((p: ContentPiece) => { text += `[${p.platform.toUpperCase()} — ${p.type}]\n${p.title}\n\n${p.content}\n\n${"-".repeat(40)}\n\n`; });
+      day.pieces.forEach((p: ContentPiece) => { text += `[${p.platform.toUpperCase()} - ${p.type}]\n${p.title}\n\n${p.content}\n\n${"-".repeat(40)}\n\n`; });
     });
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
