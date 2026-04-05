@@ -156,7 +156,7 @@ Return ONLY valid JSON in this exact format (no markdown, no code blocks):
 }
 
 function stripEmDashes(text) {
-  if (!text) return text;
+  if (!text || typeof text !== 'string') return text;
   return text.replace(/\u2014/g, ".").replace(/\u2013/g, ",").replace(/\u2014/g, ".").replace(/\u2013/g, ",");
 }
 
