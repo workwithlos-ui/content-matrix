@@ -402,7 +402,7 @@ export default async function handler(req, res) {
       const userPrompt = buildDayPrompt(day, topic, dayTheme, angle);
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1",
+        model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
