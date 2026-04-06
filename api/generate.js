@@ -96,14 +96,20 @@ Parenthetical asides are limited to 1 per piece maximum.
 
 // ─── PLATFORM INSTRUCTIONS ───────────────────────────────────────
 const PLATFORM_INSTRUCTIONS = {
-  LinkedIn: `LINKEDIN (authority + depth):
-- 1200-1800 characters. Front-load value in first 2 lines (pre-fold hook).
-- Write in first person. Sound like a founder posting from experience.
-- Use line breaks between ideas. One thought per paragraph.
-- No hashtag spam. 0-2 relevant hashtags max, at the very end.
-- Structure: Hook (2 lines) > Context/Story > Insight > Proof/Example > CTA
-- Avoid: bullet-point listicles, generic advice, "I'm humbled to announce"
-- The post should feel like a private lesson made public.`,
+  LinkedIn: `LINKEDIN (scroll-stopping authority post):
+- 1000-1600 characters. Every line earns the next line.
+- FORMAT IS EVERYTHING. One thought per line. Lots of whitespace. Short punchy lines.
+- First line is a COMMAND or CONFRONTATION that stops the scroll. Examples: "Stop doing X." / "X brands, listen up." / "Your Y is broken."
+- Second line creates CONTRAST or TENSION. Example: "Your ads are optimised. Your funnel? Not so much."
+- Use line breaks aggressively. Never more than 2 sentences in a row without a break.
+- Emoji usage: 1-3 max, used as STRUCTURAL MARKERS for lists or section breaks (pointing finger, numbered squares). Never decorative.
+- When listing tactical items, use numbered emoji (1️⃣ 2️⃣ 3️⃣) with one specific actionable per line.
+- Include real acronyms and metrics where relevant (CRO, RPV, AOV, CAC, LTV) for credibility.
+- CTA is soft but clear. "DM me X" or "Comment Y if you want Z."
+- No hashtag spam. 0-2 max at the very end.
+- Avoid: long paragraphs, storytelling mode, "I remember when...", walls of text.
+- The post should feel like a founder calling out a problem and handing over the solution in under 60 seconds of reading.
+- CRITICAL: If someone skimming only reads the first word of each line, they should still get the message.`,
 
   Twitter: `TWITTER/X (sharp + punchy):
 - Thread format: 5-8 tweets. First tweet is the hook, must stand alone.
@@ -396,7 +402,7 @@ export default async function handler(req, res) {
       const userPrompt = buildDayPrompt(day, topic, dayTheme, angle);
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
+        model: "gpt-4.1",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
