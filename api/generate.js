@@ -198,17 +198,16 @@ Return ONLY valid JSON in this exact format (no markdown, no code blocks):
 
 function stripEmDashes(text) {
   if (!text || typeof text !== 'string') return text;
-  // Kill every type of dash: em dash, en dash, horizontal bar, and double hyphens used as dashes
   return text
-    .replace(/\u2014/g, ".")   // em dash -> period
-    .replace(/\u2013/g, ",")   // en dash -> comma
-    .replace(/\u2015/g, ".")   // horizontal bar -> period
-    .replace(/\u2012/g, ",")   // figure dash -> comma
-    .replace(/\s*--\s*/g, ". ") // double hyphen -> period
-    .replace(/\.\./g, ".")     // clean up double periods
-    .replace(/\s+\./g, ".")    // clean up space before period
-    .replace(/\.\s*,/g, ".")   // clean up period-comma
-    .replace(/,\s*\./g, ".");  // clean up comma-period
+    .replace(/\u2014/g, ".")
+    .replace(/\u2013/g, ",")
+    .replace(/\u2015/g, ".")
+    .replace(/\u2012/g, ",")
+    .replace(/\s*--\s*/g, ". ")
+    .replace(/\.\./g, ".")
+    .replace(/\s+\./g, ".")
+    .replace(/\.\s*,/g, ".")
+    .replace(/,\s*\./g, ".");
 }
 
 function cleanPiece(piece) {
@@ -246,13 +245,12 @@ export default async function handler(req, res) {
 
     const systemPrompt = buildSystemPrompt(topic, sourceType);
 
-    // Generate all 5 days in parallel for speed
     const dayPromises = DAY_THEMES.map(async (dayTheme, index) => {
       const day = index + 1;
       const userPrompt = buildDayPrompt(day, topic, dayTheme);
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1",
+        model: "gpt-4.1-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
