@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { ContentCalendar, ContentPiece, ContentPreferences } from "./types";
+import type { ContentCalendar, ContentPiece, ContentPreferences, PieceScorecard } from "./types";
 import { STARTER_PRESETS, type ContentPreset } from "./presets";
 
 // ─── PARTICLE CANVAS ──────────────────────────────────────────────────────────
@@ -223,8 +223,10 @@ const LOADING_MSGS = [
 export default function App() {
   const HISTORY_KEY = "content-matrix-history-v1";
   const PRESET_KEY = "content-matrix-presets-v1";
+  const CLIENT_KEY = "content-matrix-client-profile-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
+  const [clientProfile, setClientProfile] = useState("Default workspace");
   const [audience, setAudience] = useState("Founders and operators");
   const [brandVoice, setBrandVoice] = useState("Sharp, premium, operator-led");
   const [offerCta, setOfferCta] = useState("Invite replies or DMs for deeper strategy help");
@@ -269,12 +271,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const saved = localStorage.getItem(CLIENT_KEY);
+    if (saved) setClientProfile(saved);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
   }, [history]);
 
   useEffect(() => {
     localStorage.setItem(PRESET_KEY, JSON.stringify(savedPresets.slice(0, 10)));
   }, [savedPresets]);
+
+  useEffect(() => {
+    localStorage.setItem(CLIENT_KEY, clientProfile);
+  }, [clientProfile]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -356,6 +367,7 @@ export default function App() {
         ...data,
         preferences,
         presetName: allPresets.find((preset) => preset.id === activePresetId)?.label,
+        clientProfile,
       };
       setResult(enriched); setActiveDay(0); setActivePlatform("LinkedIn");
       setHistory(prev => [enriched, ...prev.filter(item => item.generatedAt !== enriched.generatedAt)].slice(0, 8));
@@ -364,7 +376,7 @@ export default function App() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Generation failed", false);
     } finally { clearInterval(interval); setIsGenerating(false); }
-  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, showToast, allPresets, activePresetId]);
+  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, showToast, allPresets, activePresetId, clientProfile]);
 
   const handleCopy = useCallback((content: string, id: string) => {
     navigator.clipboard.writeText(content).then(() => {
@@ -388,6 +400,28 @@ export default function App() {
 
   const currentDay = result?.days[activeDay];
   const currentPiece = currentDay?.pieces.find((p: ContentPiece) => p.platform === activePlatform);
+
+  const buildScorecard = useCallback((piece: ContentPiece | undefined): PieceScorecard | null => {
+    if (!piece) return null;
+    const text = piece.content.toLowerCase();
+    const hooks = piece.alt_hooks || [];
+    const hasNumbers = /\d/.test(piece.content);
+    const hasOffer = !!coreOffer.trim() && text.includes(coreOffer.trim().toLowerCase().split(" ")[0]);
+    const lineBreakDensity = piece.content.split("\n").filter(Boolean).length;
+    const hookStrength = Math.min(10, 5 + Math.min(hooks.length, 5));
+    const specificity = Math.min(10, (hasNumbers ? 4 : 2) + Math.min(6, Math.floor(piece.content.length / 280)));
+    const offerAlignment = Math.min(10, hasOffer ? 8 : 5);
+    const platformFit = Math.min(10, lineBreakDensity >= 4 ? 8 : 6);
+    const overall = Math.round((hookStrength + specificity + offerAlignment + platformFit) / 4);
+    const revisionPriorities = [];
+    if (!hasNumbers) revisionPriorities.push("Add one proof point, number, or concrete example.");
+    if (!hasOffer) revisionPriorities.push("Tighten offer alignment so the content points toward a real business outcome.");
+    if (hooks.length < 5) revisionPriorities.push("Generate stronger alternate hooks before publishing.");
+    if (lineBreakDensity < 3) revisionPriorities.push("Improve readability with sharper structure and pacing.");
+    return { hookStrength, specificity, offerAlignment, platformFit, overall, revisionPriorities };
+  }, [coreOffer]);
+
+  const scorecard = buildScorecard(currentPiece);
 
   const V = "#6366f1"; // violet primary
   const BG = "#080810"; // background
@@ -632,6 +666,9 @@ export default function App() {
                   onBlur={e => { e.target.style.borderColor = "rgba(99,102,241,0.2)"; e.target.style.boxShadow = "none"; }} />
               </div>
               <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Client profile</label>
+                <input type="text" value={clientProfile} onChange={e => setClientProfile(e.target.value)} placeholder="Client or workspace name"
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", marginBottom: "14px" }} />
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "10px" }}>
                   <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>Brand kit preset</label>
                   <button type="button" onClick={saveCurrentPreset} style={{ background: "transparent", border: "1px solid rgba(99,102,241,0.22)", borderRadius: "999px", padding: "8px 12px", color: "#c7d2fe", cursor: "pointer", fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
@@ -777,6 +814,7 @@ export default function App() {
                   <h3 style={{ fontWeight: 700, fontSize: "1.5rem", color: "#E8E8F0", letterSpacing: "-0.02em", marginBottom: "4px" }}>Your 5-Day Calendar</h3>
                   <p style={{ fontSize: "13px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>{result.topic.length > 60 ? result.topic.slice(0, 60) + "..." : result.topic}</p>
                   {result.presetName && <p style={{ fontSize: "12px", color: "#a5b4fc", marginTop: "6px" }}>Preset: {result.presetName}</p>}
+                  {result.clientProfile && <p style={{ fontSize: "12px", color: "rgba(232,232,240,0.48)", marginTop: "4px" }}>Workspace: {result.clientProfile}</p>}
                 </div>
                 <button onClick={handleDownloadAll} style={{ padding: "10px 22px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
@@ -862,6 +900,35 @@ export default function App() {
                       <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(99,102,241,0.1)", borderTop: "2px solid rgba(99,102,241,0.3)", borderRadius: "10px", padding: "28px", maxHeight: "520px", overflowY: "auto" }}>
                         <pre style={{ fontFamily: "'IBM Plex Mono', 'JetBrains Mono', monospace", fontSize: "13.5px", lineHeight: 1.85, whiteSpace: "pre-wrap", color: "rgba(232,232,240,0.82)", margin: 0 }}>{currentPiece.content}</pre>
                       </div>
+                      {scorecard && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "14px", marginTop: "16px" }}>
+                          <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Performance scorecard</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "10px" }}>
+                              {[
+                                ["Overall", scorecard.overall],
+                                ["Hook", scorecard.hookStrength],
+                                ["Specificity", scorecard.specificity],
+                                ["Offer", scorecard.offerAlignment],
+                                ["Fit", scorecard.platformFit]
+                              ].map(([label, value]) => (
+                                <div key={label as string} style={{ padding: "12px", borderRadius: "8px", background: "rgba(99,102,241,0.08)", textAlign: "center" }}>
+                                  <div style={{ fontSize: "10px", color: "rgba(232,232,240,0.48)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>{label as string}</div>
+                                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#ffffff" }}>{value as number}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Revision priorities</div>
+                            <div style={{ display: "grid", gap: "8px" }}>
+                              {(scorecard.revisionPriorities.length ? scorecard.revisionPriorities : ["Strong working draft. Final pass should sharpen proof and CTA."]).map((item, index) => (
+                                <div key={index} style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>{item}</div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {((currentPiece.alt_hooks?.length || 0) > 0 || (currentPiece.cta_options?.length || 0) > 0) && (
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
                           {!!currentPiece.alt_hooks?.length && (

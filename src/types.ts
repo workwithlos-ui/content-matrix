@@ -34,6 +34,15 @@ export interface StrategyBrief {
   ctaStrategy: string;
 }
 
+export interface PieceScorecard {
+  hookStrength: number;
+  specificity: number;
+  offerAlignment: number;
+  platformFit: number;
+  overall: number;
+  revisionPriorities: string[];
+}
+
 export interface ContentCalendar {
   topic: string;
   sourceType: "youtube" | "topic";
@@ -42,4 +51,5 @@ export interface ContentCalendar {
   preferences?: ContentPreferences;
   presetName?: string;
   strategyBrief?: StrategyBrief;
+  clientProfile?: string;
 }
