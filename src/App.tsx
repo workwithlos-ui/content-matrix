@@ -226,6 +226,7 @@ export default function App() {
   const CLIENT_KEY = "content-matrix-client-profile-v1";
   const REVIEW_KEY = "content-matrix-review-state-v1";
   const FEEDBACK_KEY = "content-matrix-feedback-v1";
+  const PUBLISH_KEY = "content-matrix-publishing-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
   const [clientProfile, setClientProfile] = useState("Default workspace");
@@ -239,10 +240,14 @@ export default function App() {
   const [competitorContext, setCompetitorContext] = useState("");
   const [bannedClaims, setBannedClaims] = useState("");
   const [swipeFile, setSwipeFile] = useState("");
+  const [sourceLibrary, setSourceLibrary] = useState("");
+  const [publishingOwner, setPublishingOwner] = useState("Founder");
+  const [campaignWindow, setCampaignWindow] = useState("This week");
   const [activePresetId, setActivePresetId] = useState<string>(STARTER_PRESETS[0].id);
   const [savedPresets, setSavedPresets] = useState<ContentPreset[]>([]);
   const [reviewState, setReviewState] = useState<Record<string, { status: "draft" | "approved" | "revise"; note: string }>>({});
   const [feedbackState, setFeedbackState] = useState<Record<string, { rating: number; outcome: "testing" | "winner" | "weak"; note: string; platform: string }>>({});
+  const [publishingState, setPublishingState] = useState<Record<string, { status: "queue" | "editing" | "scheduled" | "posted"; due: string; owner: string }>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<ContentCalendar | null>(null);
@@ -303,6 +308,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PUBLISH_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") setPublishingState(parsed);
+    } catch {
+      // ignore malformed publishing state
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
   }, [history]);
 
@@ -322,6 +338,10 @@ export default function App() {
     localStorage.setItem(FEEDBACK_KEY, JSON.stringify(feedbackState));
   }, [feedbackState]);
 
+  useEffect(() => {
+    localStorage.setItem(PUBLISH_KEY, JSON.stringify(publishingState));
+  }, [publishingState]);
+
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3000);
@@ -340,6 +360,9 @@ export default function App() {
     setCompetitorContext(preferences.competitorContext || "");
     setBannedClaims(preferences.bannedClaims || "");
     setSwipeFile(preferences.swipeFile || "");
+    setSourceLibrary(preferences.sourceLibrary || "");
+    setPublishingOwner(preferences.publishingOwner || "Founder");
+    setCampaignWindow(preferences.campaignWindow || "This week");
   }, []);
 
   const saveCurrentPreset = useCallback(() => {
@@ -361,12 +384,15 @@ export default function App() {
         competitorContext: competitorContext.trim(),
         bannedClaims: bannedClaims.trim(),
         swipeFile: swipeFile.trim(),
+        sourceLibrary: sourceLibrary.trim(),
+        publishingOwner: publishingOwner.trim(),
+        campaignWindow: campaignWindow.trim(),
       }
     };
     setSavedPresets((prev) => [preset, ...prev.filter((item) => item.label !== preset.label)].slice(0, 10));
     setActivePresetId(preset.id);
     showToast("Preset saved");
-  }, [audience, bannedClaims, brandVoice, campaignGoal, competitorContext, coreOffer, input, notes, offerCta, proofPoints, savedPresets.length, showToast, swipeFile]);
+  }, [audience, bannedClaims, brandVoice, campaignGoal, campaignWindow, competitorContext, coreOffer, input, notes, offerCta, proofPoints, publishingOwner, savedPresets.length, showToast, sourceLibrary, swipeFile]);
 
   const allPresets = [...STARTER_PRESETS, ...savedPresets];
 
@@ -385,6 +411,9 @@ export default function App() {
       competitorContext: competitorContext.trim(),
       bannedClaims: bannedClaims.trim(),
       swipeFile: swipeFile.trim(),
+      sourceLibrary: sourceLibrary.trim(),
+      publishingOwner: publishingOwner.trim(),
+      campaignWindow: campaignWindow.trim(),
     };
 
     try {
@@ -414,7 +443,7 @@ export default function App() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Generation failed", false);
     } finally { clearInterval(interval); setIsGenerating(false); }
-  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, swipeFile, showToast, allPresets, activePresetId, clientProfile]);
+  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, swipeFile, sourceLibrary, publishingOwner, campaignWindow, showToast, allPresets, activePresetId, clientProfile]);
 
   const handleCopy = useCallback((content: string, id: string) => {
     navigator.clipboard.writeText(content).then(() => {
@@ -675,6 +704,18 @@ ${nextCampaignRecommendations.map((item) => `- ${item}`).join("\n")}
       }
     }));
   }, [currentPiece, currentPieceKey]);
+
+  const updatePublishing = useCallback((updates: Partial<{ status: "queue" | "editing" | "scheduled" | "posted"; due: string; owner: string }>) => {
+    if (!currentPieceKey) return;
+    setPublishingState((prev) => ({
+      ...prev,
+      [currentPieceKey]: {
+        status: updates.status ?? prev[currentPieceKey]?.status ?? "queue",
+        due: updates.due ?? prev[currentPieceKey]?.due ?? campaignWindow,
+        owner: updates.owner ?? prev[currentPieceKey]?.owner ?? publishingOwner
+      }
+    }));
+  }, [campaignWindow, currentPieceKey, publishingOwner]);
 
   const V = "#6366f1"; // violet primary
   const BG = "#080810"; // background
@@ -1008,6 +1049,25 @@ ${nextCampaignRecommendations.map((item) => `- ${item}`).join("\n")}
                 <textarea value={swipeFile} onChange={e => setSwipeFile(e.target.value)} rows={3} placeholder="Winning posts, ad styles, creator references, structures to borrow..."
                   style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Source library</label>
+                  <textarea value={sourceLibrary} onChange={e => setSourceLibrary(e.target.value)} rows={3} placeholder="Transcript snippets, PDFs, notes, docs, calls, screenshots..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
+                </div>
+                <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: "14px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Publishing owner</label>
+                    <input type="text" value={publishingOwner} onChange={e => setPublishingOwner(e.target.value)} placeholder="Founder, editor, content lead..."
+                      style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Campaign window</label>
+                    <input type="text" value={campaignWindow} onChange={e => setCampaignWindow(e.target.value)} placeholder="This week, next sprint, launch week..."
+                      style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                  </div>
+                </div>
+              </div>
               <div style={{ marginBottom: "28px" }}>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Operator Notes</label>
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Proof points, offer, ICP nuance, forbidden claims, angle notes..."
@@ -1131,6 +1191,23 @@ ${nextCampaignRecommendations.map((item) => `- ${item}`).join("\n")}
                 <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Learning insight</div>
                   <div style={{ fontSize: "14px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>{learningInsights.learningNote}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "18px" }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Campaign ops</div>
+                  <div style={{ display: "grid", gap: "8px" }}>
+                    <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>Owner: {publishingOwner}</div>
+                    <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>Window: {campaignWindow}</div>
+                    <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>Source library: {sourceLibrary || "Not set yet"}</div>
+                  </div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Ops recommendation</div>
+                  <div style={{ fontSize: "14px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>
+                    Build from the source library first, publish to the strongest platform first, and turn every winner into a swipe-file pattern for the next campaign.
+                  </div>
                 </div>
               </div>
 
@@ -1343,6 +1420,40 @@ ${nextCampaignRecommendations.map((item) => `- ${item}`).join("\n")}
                                 : "No platform signal yet. Once you log a few winners, this starts turning into a real learning loop."}
                             </div>
                           </div>
+                        </div>
+                      </div>
+                      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px", marginTop: "16px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Publishing queue</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 180px", gap: "12px", alignItems: "end" }}>
+                          <label style={{ display: "grid", gap: "8px" }}>
+                            <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.48)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Owner</span>
+                            <input
+                              value={publishingState[currentPieceKey]?.owner || publishingOwner}
+                              onChange={(e) => updatePublishing({ owner: e.target.value })}
+                              style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "13px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
+                            />
+                          </label>
+                          <label style={{ display: "grid", gap: "8px" }}>
+                            <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.48)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Due</span>
+                            <input
+                              value={publishingState[currentPieceKey]?.due || campaignWindow}
+                              onChange={(e) => updatePublishing({ due: e.target.value })}
+                              style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "13px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
+                            />
+                          </label>
+                          <label style={{ display: "grid", gap: "8px" }}>
+                            <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.48)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Status</span>
+                            <select
+                              value={publishingState[currentPieceKey]?.status || "queue"}
+                              onChange={(e) => updatePublishing({ status: e.target.value as "queue" | "editing" | "scheduled" | "posted" })}
+                              style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "13px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
+                            >
+                              <option value="queue">queue</option>
+                              <option value="editing">editing</option>
+                              <option value="scheduled">scheduled</option>
+                              <option value="posted">posted</option>
+                            </select>
+                          </label>
                         </div>
                       </div>
                       {((currentPiece.alt_hooks?.length || 0) > 0 || (currentPiece.cta_options?.length || 0) > 0) && (

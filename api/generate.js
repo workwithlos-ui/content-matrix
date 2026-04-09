@@ -208,6 +208,9 @@ function buildSystemPrompt(topic, sourceType, preferences = {}) {
   const competitorContext = preferences.competitorContext?.trim();
   const bannedClaims = preferences.bannedClaims?.trim();
   const swipeFile = preferences.swipeFile?.trim();
+  const sourceLibrary = preferences.sourceLibrary?.trim();
+  const publishingOwner = preferences.publishingOwner?.trim();
+  const campaignWindow = preferences.campaignWindow?.trim();
   const sourceContext = sourceType === "youtube"
     ? `The content draws from a YouTube video about: "${topic}". Extract the sharpest insights, real frameworks, and specific examples. Treat the video as raw material to mine for gold, not something to summarize.`
     : `The content is about: "${topic}". Write from the perspective of someone who has DONE this, not read about it. First-person experience, specific details, real stakes.`;
@@ -227,6 +230,9 @@ ${proofPoints ? `PROOF BANK: ${proofPoints}` : ""}
 ${competitorContext ? `COMPETITOR CONTEXT: ${competitorContext}` : ""}
 ${bannedClaims ? `BANNED CLAIMS / RED LINES: ${bannedClaims}` : ""}
 ${swipeFile ? `SWIPE FILE / REFERENCE STYLE: ${swipeFile}` : ""}
+${sourceLibrary ? `SOURCE LIBRARY / RAW MATERIAL: ${sourceLibrary}` : ""}
+${publishingOwner ? `PUBLISHING OWNER: ${publishingOwner}` : ""}
+${campaignWindow ? `CAMPAIGN WINDOW: ${campaignWindow}` : ""}
 ${notes ? `EXTRA CONTEXT TO RESPECT: ${notes}` : ""}
 
 VOICE RULES (non-negotiable):
@@ -521,6 +527,9 @@ export default async function handler(req, res) {
         competitorContext: preferences?.competitorContext || "",
         bannedClaims: preferences?.bannedClaims || "",
         swipeFile: preferences?.swipeFile || "",
+        sourceLibrary: preferences?.sourceLibrary || "",
+        publishingOwner: preferences?.publishingOwner || "",
+        campaignWindow: preferences?.campaignWindow || "",
       },
     });
   } catch (err) {

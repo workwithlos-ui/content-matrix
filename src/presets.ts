@@ -22,7 +22,10 @@ export const STARTER_PRESETS: ContentPreset[] = [
       proofPoints: "Real operating lessons, before and after shifts, clear decision frameworks",
       competitorContext: "Generic AI content and shallow creator advice are the enemy",
       bannedClaims: "Avoid fake virality claims or made-up metrics",
-      swipeFile: "Posts with hard-earned lessons, specific numbers, operator confessions, and punchy line breaks"
+      swipeFile: "Posts with hard-earned lessons, specific numbers, operator confessions, and punchy line breaks",
+      sourceLibrary: "Founder notes, podcast clips, team call takeaways, operator screenshots",
+      publishingOwner: "Founder",
+      campaignWindow: "This week"
     }
   },
   {
@@ -39,7 +42,10 @@ export const STARTER_PRESETS: ContentPreset[] = [
       proofPoints: "Creator lessons, growth experiments, real audience response",
       competitorContext: "Most creator content is repetitive and empty",
       bannedClaims: "No fake six-figure screenshots or manufactured case studies",
-      swipeFile: "Short-form hooks, confessional posts, creator myths, and pattern interrupts"
+      swipeFile: "Short-form hooks, confessional posts, creator myths, and pattern interrupts",
+      sourceLibrary: "Voice notes, tweet drafts, screenshots, newsletter snippets",
+      publishingOwner: "Content lead",
+      campaignWindow: "Next 5 days"
     }
   },
   {
@@ -56,7 +62,10 @@ export const STARTER_PRESETS: ContentPreset[] = [
       proofPoints: "Case studies, pipeline lessons, channel breakdowns, revenue metrics with context",
       competitorContext: "Competitors lean on jargon and recycled demand-gen talking points",
       bannedClaims: "No guaranteed ROI language or unsupported numbers",
-      swipeFile: "Case studies, teardown threads, proof-led carousel posts, and sober operator commentary"
+      swipeFile: "Case studies, teardown threads, proof-led carousel posts, and sober operator commentary",
+      sourceLibrary: "Case study docs, CRM notes, sales calls, dashboards",
+      publishingOwner: "RevOps or growth lead",
+      campaignWindow: "Current campaign sprint"
     }
   }
 ];

@@ -26,6 +26,9 @@ export interface ContentPreferences {
   competitorContext?: string;
   bannedClaims?: string;
   swipeFile?: string;
+  sourceLibrary?: string;
+  publishingOwner?: string;
+  campaignWindow?: string;
 }
 
 export interface StrategyBrief {
