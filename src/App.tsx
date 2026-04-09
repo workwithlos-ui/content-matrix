@@ -562,6 +562,78 @@ ${sections}`;
     };
   }, [feedbackState, reviewState]);
 
+  const winnerLibrary = useMemo(() => {
+    return history.flatMap((calendar) =>
+      calendar.days.flatMap((day) =>
+        day.pieces
+          .map((piece) => {
+            const key = `${calendar.generatedAt}-${day.day}-${piece.platform}`;
+            const feedback = feedbackState[key];
+            if (!feedback || feedback.outcome !== "winner") return null;
+            return {
+              key,
+              topic: calendar.topic,
+              platform: piece.platform,
+              title: piece.title,
+              rating: feedback.rating,
+              note: feedback.note,
+              hook: piece.alt_hooks?.[0] || piece.title,
+            };
+          })
+          .filter(Boolean)
+      )
+    ).slice(0, 6) as Array<{
+      key: string;
+      topic: string;
+      platform: string;
+      title: string;
+      rating: number;
+      note: string;
+      hook: string;
+    }>;
+  }, [feedbackState, history]);
+
+  const nextCampaignRecommendations = useMemo(() => {
+    const weakest = Object.values(feedbackState)
+      .filter((item) => item.outcome === "weak")
+      .map((item) => item.platform);
+    const weakPlatform = weakest[0];
+    const bestPlatform = learningInsights.bestPlatform !== "No feedback yet" ? learningInsights.bestPlatform : "LinkedIn";
+    return [
+      `Run the next campaign with ${bestPlatform} as the hero channel and reuse the strongest approved hook pattern first.`,
+      weakPlatform
+        ? `Rework ${weakPlatform} with more proof texture and tighter opening lines before scaling it again.`
+        : "Use weak-draft logging to identify which platform needs the next rewrite sprint.",
+      winnerLibrary.length
+        ? `Promote this winner pattern into your swipe file: "${winnerLibrary[0].hook}".`
+        : "Mark at least one winner so the system can recommend proven angles instead of generic ones."
+    ];
+  }, [feedbackState, learningInsights.bestPlatform, winnerLibrary]);
+
+  const handleDownloadLearningReport = useCallback(() => {
+    const text = `# Content Matrix Learning Report
+
+Workspace: ${clientProfile}
+Approval rate: ${learningInsights.approvalRate}
+Best platform signal: ${learningInsights.bestPlatform}
+Learning note: ${learningInsights.learningNote}
+
+## Winner Library
+${winnerLibrary.length ? winnerLibrary.map((item) => `- ${item.platform}: ${item.hook} (${item.rating}/10)`).join("\n") : "- No winners logged yet"}
+
+## Next Campaign Recommendations
+${nextCampaignRecommendations.map((item) => `- ${item}`).join("\n")}
+`;
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `content-matrix-learning-report-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded learning report");
+  }, [clientProfile, learningInsights, nextCampaignRecommendations, showToast, winnerLibrary]);
+
   const buildCreativeBrief = useCallback((piece: ContentPiece | undefined, dayLabel?: string) => {
     if (!piece) return null;
     const hook = piece.alt_hooks?.[0] || piece.title;
@@ -1013,6 +1085,11 @@ ${sections}`;
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.12)"; }}>
                     Download Client Pack
                   </button>
+                  <button onClick={handleDownloadLearningReport} style={{ padding: "10px 22px", borderRadius: "8px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(99,102,241,0.25)", color: "#e9d5ff", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}>
+                    Download Learning Report
+                  </button>
                 </div>
               </div>
 
@@ -1054,6 +1131,31 @@ ${sections}`;
                 <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Learning insight</div>
                   <div style={{ fontSize: "14px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>{learningInsights.learningNote}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "14px", marginBottom: "18px" }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "12px" }}>Winner library</div>
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {winnerLibrary.length ? winnerLibrary.map((item) => (
+                      <div key={item.key} style={{ padding: "12px", borderRadius: "10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.08)" }}>
+                        <div style={{ fontSize: "12px", color: "#a5b4fc", marginBottom: "6px" }}>{item.platform} · {item.rating}/10</div>
+                        <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{item.hook}</div>
+                        <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.46)" }}>{item.topic}</div>
+                      </div>
+                    )) : (
+                      <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.6)" }}>No winners logged yet. Mark strong pieces as winners to build a reusable hook library.</div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "12px" }}>Next campaign recommendations</div>
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {nextCampaignRecommendations.map((item, index) => (
+                      <div key={index} style={{ fontSize: "13px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>{item}</div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
