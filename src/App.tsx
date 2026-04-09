@@ -224,6 +224,7 @@ export default function App() {
   const HISTORY_KEY = "content-matrix-history-v1";
   const PRESET_KEY = "content-matrix-presets-v1";
   const CLIENT_KEY = "content-matrix-client-profile-v1";
+  const REVIEW_KEY = "content-matrix-review-state-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
   const [clientProfile, setClientProfile] = useState("Default workspace");
@@ -236,8 +237,10 @@ export default function App() {
   const [proofPoints, setProofPoints] = useState("");
   const [competitorContext, setCompetitorContext] = useState("");
   const [bannedClaims, setBannedClaims] = useState("");
+  const [swipeFile, setSwipeFile] = useState("");
   const [activePresetId, setActivePresetId] = useState<string>(STARTER_PRESETS[0].id);
   const [savedPresets, setSavedPresets] = useState<ContentPreset[]>([]);
+  const [reviewState, setReviewState] = useState<Record<string, { status: "draft" | "approved" | "revise"; note: string }>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<ContentCalendar | null>(null);
@@ -276,6 +279,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(REVIEW_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") setReviewState(parsed);
+    } catch {
+      // ignore malformed review state
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
   }, [history]);
 
@@ -286,6 +300,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(CLIENT_KEY, clientProfile);
   }, [clientProfile]);
+
+  useEffect(() => {
+    localStorage.setItem(REVIEW_KEY, JSON.stringify(reviewState));
+  }, [reviewState]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -304,6 +322,7 @@ export default function App() {
     setProofPoints(preferences.proofPoints || "");
     setCompetitorContext(preferences.competitorContext || "");
     setBannedClaims(preferences.bannedClaims || "");
+    setSwipeFile(preferences.swipeFile || "");
   }, []);
 
   const saveCurrentPreset = useCallback(() => {
@@ -324,12 +343,13 @@ export default function App() {
         proofPoints: proofPoints.trim(),
         competitorContext: competitorContext.trim(),
         bannedClaims: bannedClaims.trim(),
+        swipeFile: swipeFile.trim(),
       }
     };
     setSavedPresets((prev) => [preset, ...prev.filter((item) => item.label !== preset.label)].slice(0, 10));
     setActivePresetId(preset.id);
     showToast("Preset saved");
-  }, [audience, brandVoice, input, notes, offerCta, savedPresets.length, showToast]);
+  }, [audience, bannedClaims, brandVoice, campaignGoal, competitorContext, coreOffer, input, notes, offerCta, proofPoints, savedPresets.length, showToast, swipeFile]);
 
   const allPresets = [...STARTER_PRESETS, ...savedPresets];
 
@@ -347,6 +367,7 @@ export default function App() {
       proofPoints: proofPoints.trim(),
       competitorContext: competitorContext.trim(),
       bannedClaims: bannedClaims.trim(),
+      swipeFile: swipeFile.trim(),
     };
 
     try {
@@ -376,7 +397,7 @@ export default function App() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Generation failed", false);
     } finally { clearInterval(interval); setIsGenerating(false); }
-  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, showToast, allPresets, activePresetId, clientProfile]);
+  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, swipeFile, showToast, allPresets, activePresetId, clientProfile]);
 
   const handleCopy = useCallback((content: string, id: string) => {
     navigator.clipboard.writeText(content).then(() => {
@@ -387,7 +408,11 @@ export default function App() {
 
   const handleDownloadAll = useCallback(() => {
     if (!result) return;
-    let text = `CONTENT MATRIX - 5-Day Calendar\nTopic: ${result.topic}\nGenerated: ${new Date(result.generatedAt).toLocaleDateString()}\n\n${"=".repeat(60)}\n\n`;
+    let text = `CONTENT MATRIX - 5-Day Calendar\nClient: ${result.clientProfile || clientProfile}\nTopic: ${result.topic}\nGenerated: ${new Date(result.generatedAt).toLocaleDateString()}\n\n`;
+    if (result.strategyBrief) {
+      text += `POSITIONING\n${result.strategyBrief.positioning}\n\nHOOK THEMES\n- ${result.strategyBrief.hookThemes.join("\n- ")}\n\nPROOF ASSETS\n- ${result.strategyBrief.proofAssets.join("\n- ")}\n\nCTA STRATEGY\n${result.strategyBrief.ctaStrategy}\n\n`;
+    }
+    text += `${"=".repeat(60)}\n\n`;
     result.days.forEach(day => {
       text += `DAY ${day.day}: ${day.label.toUpperCase()}\n${day.description}\n${"-".repeat(40)}\n\n`;
       day.pieces.forEach((p: ContentPiece) => { text += `[${p.platform.toUpperCase()} - ${p.type}]\n${p.title}\n\n${p.content}\n\n${"-".repeat(40)}\n\n`; });
@@ -396,10 +421,75 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `content-matrix-${Date.now()}.txt`; a.click();
     URL.revokeObjectURL(url); showToast("Downloaded all content");
-  }, [result, showToast]);
+  }, [clientProfile, result, showToast]);
+
+  const handleDownloadClientPack = useCallback(() => {
+    if (!result) return;
+    const sections = result.days.flatMap((day) =>
+      day.pieces.map((piece) => {
+        const review = reviewState[`${result.generatedAt}-${day.day}-${piece.platform}`];
+        return `## Day ${day.day} - ${piece.platform}
+Title: ${piece.title}
+Angle: ${day.angle || "N/A"}
+Status: ${review?.status || "draft"}
+Review note: ${review?.note || "None"}
+
+### Content
+${piece.content}
+
+### Alternate hooks
+- ${(piece.alt_hooks || []).join("\n- ")}
+
+### CTA options
+- ${(piece.cta_options || []).join("\n- ")}
+`;
+      })
+    ).join("\n");
+
+    const text = `# Content Matrix Client Pack
+
+Client: ${result.clientProfile || clientProfile}
+Topic: ${result.topic}
+Preset: ${result.presetName || "Custom"}
+Generated: ${new Date(result.generatedAt).toLocaleString()}
+
+## Strategy
+Positioning: ${result.strategyBrief?.positioning || "N/A"}
+CTA strategy: ${result.strategyBrief?.ctaStrategy || "N/A"}
+Hook themes:
+- ${(result.strategyBrief?.hookThemes || []).join("\n- ")}
+
+Proof assets:
+- ${(result.strategyBrief?.proofAssets || []).join("\n- ")}
+
+## Preferences
+Audience: ${result.preferences?.audience || ""}
+Brand voice: ${result.preferences?.brandVoice || ""}
+Campaign goal: ${result.preferences?.campaignGoal || ""}
+Core offer: ${result.preferences?.coreOffer || ""}
+Proof bank: ${result.preferences?.proofPoints || ""}
+Competitor context: ${result.preferences?.competitorContext || ""}
+Swipe file: ${result.preferences?.swipeFile || ""}
+Banned claims: ${result.preferences?.bannedClaims || ""}
+Notes: ${result.preferences?.notes || ""}
+
+${sections}`;
+
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `content-matrix-client-pack-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded client pack");
+  }, [clientProfile, result, reviewState, showToast]);
 
   const currentDay = result?.days[activeDay];
   const currentPiece = currentDay?.pieces.find((p: ContentPiece) => p.platform === activePlatform);
+  const currentPieceKey = currentDay && currentPiece && result
+    ? `${result.generatedAt}-${currentDay.day}-${currentPiece.platform}`
+    : "";
 
   const buildScorecard = useCallback((piece: ContentPiece | undefined): PieceScorecard | null => {
     if (!piece) return null;
@@ -422,6 +512,35 @@ export default function App() {
   }, [coreOffer]);
 
   const scorecard = buildScorecard(currentPiece);
+
+  const buildCreativeBrief = useCallback((piece: ContentPiece | undefined, dayLabel?: string) => {
+    if (!piece) return null;
+    const hook = piece.alt_hooks?.[0] || piece.title;
+    const cta = piece.cta_options?.[0] || offerCta;
+    const contentPreview = piece.content.split("\n").filter(Boolean).slice(0, 3).join(" ");
+    return {
+      hook,
+      visualDirection: `Premium ${piece.platform} execution for ${dayLabel || "campaign"} with a ${brandVoice.toLowerCase()} tone.`,
+      scenes: [
+        `Open with: ${hook}`,
+        `Middle section should unpack: ${contentPreview.slice(0, 160)}${contentPreview.length > 160 ? "..." : ""}`,
+        `Close with CTA: ${cta}`
+      ]
+    };
+  }, [brandVoice, offerCta]);
+
+  const creativeBrief = buildCreativeBrief(currentPiece, currentDay?.label);
+
+  const updateReview = useCallback((updates: Partial<{ status: "draft" | "approved" | "revise"; note: string }>) => {
+    if (!currentPieceKey) return;
+    setReviewState((prev) => ({
+      ...prev,
+      [currentPieceKey]: {
+        status: updates.status || prev[currentPieceKey]?.status || "draft",
+        note: updates.note ?? prev[currentPieceKey]?.note ?? ""
+      }
+    }));
+  }, [currentPieceKey]);
 
   const V = "#6366f1"; // violet primary
   const BG = "#080810"; // background
@@ -750,6 +869,11 @@ export default function App() {
                 <input type="text" value={bannedClaims} onChange={e => setBannedClaims(e.target.value)} placeholder="No income claims, no fake urgency, no guaranteed outcomes..."
                   style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
               </div>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Swipe file / reference style</label>
+                <textarea value={swipeFile} onChange={e => setSwipeFile(e.target.value)} rows={3} placeholder="Winning posts, ad styles, creator references, structures to borrow..."
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
+              </div>
               <div style={{ marginBottom: "28px" }}>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Operator Notes</label>
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Proof points, offer, ICP nuance, forbidden claims, angle notes..."
@@ -816,11 +940,18 @@ export default function App() {
                   {result.presetName && <p style={{ fontSize: "12px", color: "#a5b4fc", marginTop: "6px" }}>Preset: {result.presetName}</p>}
                   {result.clientProfile && <p style={{ fontSize: "12px", color: "rgba(232,232,240,0.48)", marginTop: "4px" }}>Workspace: {result.clientProfile}</p>}
                 </div>
-                <button onClick={handleDownloadAll} style={{ padding: "10px 22px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-                  Download All
-                </button>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <button onClick={handleDownloadAll} style={{ padding: "10px 22px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                    Download All
+                  </button>
+                  <button onClick={handleDownloadClientPack} style={{ padding: "10px 22px", borderRadius: "8px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(139,92,246,0.35)", color: "#ddd6fe", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.18)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.12)"; }}>
+                    Download Client Pack
+                  </button>
+                </div>
               </div>
 
               {result.strategyBrief && (
@@ -929,6 +1060,50 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
+                        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Review workflow</div>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                            {(["draft", "approved", "revise"] as const).map((status) => (
+                              <button
+                                key={status}
+                                onClick={() => updateReview({ status })}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: "999px",
+                                  border: reviewState[currentPieceKey]?.status === status ? "1px solid rgba(139,92,246,0.8)" : "1px solid rgba(99,102,241,0.2)",
+                                  background: reviewState[currentPieceKey]?.status === status ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.02)",
+                                  color: "#E8E8F0",
+                                  cursor: "pointer",
+                                  textTransform: "capitalize",
+                                  fontSize: "12px",
+                                  fontWeight: 700
+                                }}
+                              >
+                                {status}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={reviewState[currentPieceKey]?.note || ""}
+                            onChange={(e) => updateReview({ note: e.target.value })}
+                            rows={3}
+                            placeholder="What needs revision before this ships?"
+                            style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "13px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }}
+                          />
+                        </div>
+                        {creativeBrief && (
+                          <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Creative brief</div>
+                            <div style={{ fontSize: "13px", color: "#c7d2fe", marginBottom: "10px" }}>{creativeBrief.visualDirection}</div>
+                            <div style={{ display: "grid", gap: "8px" }}>
+                              {creativeBrief.scenes.map((scene, index) => (
+                                <div key={index} style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>{scene}</div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       {((currentPiece.alt_hooks?.length || 0) > 0 || (currentPiece.cta_options?.length || 0) > 0) && (
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
                           {!!currentPiece.alt_hooks?.length && (

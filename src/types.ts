@@ -25,6 +25,7 @@ export interface ContentPreferences {
   proofPoints?: string;
   competitorContext?: string;
   bannedClaims?: string;
+  swipeFile?: string;
 }
 
 export interface StrategyBrief {

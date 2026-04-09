@@ -207,6 +207,7 @@ function buildSystemPrompt(topic, sourceType, preferences = {}) {
   const proofPoints = preferences.proofPoints?.trim();
   const competitorContext = preferences.competitorContext?.trim();
   const bannedClaims = preferences.bannedClaims?.trim();
+  const swipeFile = preferences.swipeFile?.trim();
   const sourceContext = sourceType === "youtube"
     ? `The content draws from a YouTube video about: "${topic}". Extract the sharpest insights, real frameworks, and specific examples. Treat the video as raw material to mine for gold, not something to summarize.`
     : `The content is about: "${topic}". Write from the perspective of someone who has DONE this, not read about it. First-person experience, specific details, real stakes.`;
@@ -225,6 +226,7 @@ ${coreOffer ? `CORE OFFER: ${coreOffer}` : "CORE OFFER: strategic help, product,
 ${proofPoints ? `PROOF BANK: ${proofPoints}` : ""}
 ${competitorContext ? `COMPETITOR CONTEXT: ${competitorContext}` : ""}
 ${bannedClaims ? `BANNED CLAIMS / RED LINES: ${bannedClaims}` : ""}
+${swipeFile ? `SWIPE FILE / REFERENCE STYLE: ${swipeFile}` : ""}
 ${notes ? `EXTRA CONTEXT TO RESPECT: ${notes}` : ""}
 
 VOICE RULES (non-negotiable):
@@ -518,6 +520,7 @@ export default async function handler(req, res) {
         proofPoints: preferences?.proofPoints || "",
         competitorContext: preferences?.competitorContext || "",
         bannedClaims: preferences?.bannedClaims || "",
+        swipeFile: preferences?.swipeFile || "",
       },
     });
   } catch (err) {

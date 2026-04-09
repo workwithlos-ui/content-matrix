@@ -21,7 +21,8 @@ export const STARTER_PRESETS: ContentPreset[] = [
       coreOffer: "Strategic advisory or audit",
       proofPoints: "Real operating lessons, before and after shifts, clear decision frameworks",
       competitorContext: "Generic AI content and shallow creator advice are the enemy",
-      bannedClaims: "Avoid fake virality claims or made-up metrics"
+      bannedClaims: "Avoid fake virality claims or made-up metrics",
+      swipeFile: "Posts with hard-earned lessons, specific numbers, operator confessions, and punchy line breaks"
     }
   },
   {
@@ -37,7 +38,8 @@ export const STARTER_PRESETS: ContentPreset[] = [
       coreOffer: "Newsletter, community, or consulting offer",
       proofPoints: "Creator lessons, growth experiments, real audience response",
       competitorContext: "Most creator content is repetitive and empty",
-      bannedClaims: "No fake six-figure screenshots or manufactured case studies"
+      bannedClaims: "No fake six-figure screenshots or manufactured case studies",
+      swipeFile: "Short-form hooks, confessional posts, creator myths, and pattern interrupts"
     }
   },
   {
@@ -53,7 +55,8 @@ export const STARTER_PRESETS: ContentPreset[] = [
       coreOffer: "Audit, consulting engagement, or product demo",
       proofPoints: "Case studies, pipeline lessons, channel breakdowns, revenue metrics with context",
       competitorContext: "Competitors lean on jargon and recycled demand-gen talking points",
-      bannedClaims: "No guaranteed ROI language or unsupported numbers"
+      bannedClaims: "No guaranteed ROI language or unsupported numbers",
+      swipeFile: "Case studies, teardown threads, proof-led carousel posts, and sober operator commentary"
     }
   }
 ];
