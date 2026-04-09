@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { ContentCalendar, ContentPiece } from "./types";
+import type { ContentCalendar, ContentPiece, ContentPreferences } from "./types";
 
 // ─── PARTICLE CANVAS ──────────────────────────────────────────────────────────
 
@@ -220,8 +220,13 @@ const LOADING_MSGS = [
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const HISTORY_KEY = "content-matrix-history-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
+  const [audience, setAudience] = useState("Founders and operators");
+  const [brandVoice, setBrandVoice] = useState("Sharp, premium, operator-led");
+  const [offerCta, setOfferCta] = useState("Invite replies or DMs for deeper strategy help");
+  const [notes, setNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<ContentCalendar | null>(null);
@@ -229,7 +234,23 @@ export default function App() {
   const [activePlatform, setActivePlatform] = useState("LinkedIn");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [history, setHistory] = useState<ContentCalendar[]>([]);
   const toolRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setHistory(parsed);
+    } catch {
+      // ignore malformed local history
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
+  }, [history]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -242,22 +263,35 @@ export default function App() {
     if (!input.trim()) { showToast("Enter a YouTube URL or topic first", false); return; }
     setIsGenerating(true); setLoadingStep(0); setResult(null);
     const interval = setInterval(() => setLoadingStep(p => Math.min(p + 1, LOADING_MSGS.length - 1)), 8000);
+    const preferences: ContentPreferences = {
+      audience: audience.trim(),
+      brandVoice: brandVoice.trim(),
+      offerCta: offerCta.trim(),
+      notes: notes.trim(),
+    };
+
     try {
       const isYT = input.includes("youtube.com") || input.includes("youtu.be");
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: input.trim(), inputType: isYT ? "youtube" : "topic", email: email.trim() || undefined }),
+        body: JSON.stringify({
+          input: input.trim(),
+          inputType: isYT ? "youtube" : "topic",
+          email: email.trim() || undefined,
+          preferences,
+        }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({ error: "Error" })); throw new Error(e.error || `HTTP ${res.status}`); }
       const data: ContentCalendar = await res.json();
       setResult(data); setActiveDay(0); setActivePlatform("LinkedIn");
+      setHistory(prev => [data, ...prev.filter(item => item.generatedAt !== data.generatedAt)].slice(0, 8));
       showToast("5-day content calendar ready");
       setTimeout(() => toolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Generation failed", false);
     } finally { clearInterval(interval); setIsGenerating(false); }
-  }, [input, email, showToast]);
+  }, [input, email, audience, brandVoice, offerCta, notes, showToast]);
 
   const handleCopy = useCallback((content: string, id: string) => {
     navigator.clipboard.writeText(content).then(() => {
@@ -508,7 +542,8 @@ export default function App() {
           </RevealOnScroll>
 
           <RevealOnScroll>
-            <div style={{ maxWidth: "680px", padding: "40px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "16px", backdropFilter: "blur(20px)", marginBottom: "48px", boxShadow: "0 0 60px rgba(99,102,241,0.07)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: history.length ? "minmax(0, 680px) 300px" : "minmax(0, 680px)", gap: "18px", alignItems: "start", marginBottom: "48px" }}>
+            <div style={{ maxWidth: "680px", padding: "40px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "16px", backdropFilter: "blur(20px)", boxShadow: "0 0 60px rgba(99,102,241,0.07)" }}>
               <div style={{ marginBottom: "20px" }}>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>YouTube URL or Topic</label>
                 <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !isGenerating && handleGenerate()} placeholder="e.g. youtube.com/watch?v=... or 'How to build a personal brand'"
@@ -522,6 +557,28 @@ export default function App() {
                   style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", transition: "border-color 0.2s ease, box-shadow 0.2s ease", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }}
                   onFocus={e => { e.target.style.borderColor = "rgba(99,102,241,0.6)"; e.target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)"; }}
                   onBlur={e => { e.target.style.borderColor = "rgba(99,102,241,0.2)"; e.target.style.boxShadow = "none"; }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Audience</label>
+                  <input type="text" value={audience} onChange={e => setAudience(e.target.value)} placeholder="Founders, creators, operators..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Brand Voice</label>
+                  <input type="text" value={brandVoice} onChange={e => setBrandVoice(e.target.value)} placeholder="Sharp, warm, contrarian..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Primary CTA Goal</label>
+                <input type="text" value={offerCta} onChange={e => setOfferCta(e.target.value)} placeholder="DM for audit, book a call, join newsletter..."
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ marginBottom: "28px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Operator Notes</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Proof points, offer, ICP nuance, forbidden claims, angle notes..."
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
               </div>
               <button onClick={handleGenerate} disabled={isGenerating || !input.trim()}
                 style={{ width: "100%", padding: "17px", borderRadius: "10px", border: "none", cursor: isGenerating || !input.trim() ? "not-allowed" : "pointer", background: isGenerating || !input.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", fontSize: "16px", fontWeight: 700, fontFamily: "'IBM Plex Sans', sans-serif", boxShadow: isGenerating || !input.trim() ? "none" : "0 0 40px rgba(99,102,241,0.3)", transition: "all 0.2s ease", opacity: isGenerating || !input.trim() ? 0.6 : 1, letterSpacing: "-0.01em" }}
@@ -545,6 +602,23 @@ export default function App() {
                   </div>
                 </div>
               )}
+            </div>
+            {history.length > 0 && (
+              <div style={{ padding: "22px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "16px", backdropFilter: "blur(20px)", position: "sticky", top: "92px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>Recent calendars</div>
+                  <button onClick={() => { setHistory([]); localStorage.removeItem(HISTORY_KEY); showToast("History cleared"); }} style={{ background: "transparent", border: "none", color: "rgba(232,232,240,0.45)", cursor: "pointer", fontSize: "11px" }}>Clear</button>
+                </div>
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {history.map(item => (
+                    <button key={item.generatedAt} onClick={() => { setResult(item); setInput(item.topic); setActiveDay(0); setActivePlatform("LinkedIn"); }} style={{ textAlign: "left", padding: "14px", borderRadius: "12px", border: "1px solid rgba(99,102,241,0.08)", background: "rgba(255,255,255,0.02)", color: "#E8E8F0", cursor: "pointer" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "4px" }}>{item.topic.length > 42 ? `${item.topic.slice(0, 42)}...` : item.topic}</div>
+                      <div style={{ fontSize: "11px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>{new Date(item.generatedAt).toLocaleString()}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             </div>
           </RevealOnScroll>
 
@@ -602,6 +676,7 @@ export default function App() {
                         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "monospace" }}>{currentPiece.type}</span>
                           <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.25)", fontFamily: "monospace" }}>{currentPiece.content.length} chars</span>
+                          {currentDay.angle && <span style={{ fontSize: "11px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>Angle: {currentDay.angle}</span>}
                         </div>
                         <button onClick={() => handleCopy(currentPiece.content, `${activeDay}-${activePlatform}`)}
                           style={{ padding: "8px 18px", borderRadius: "6px", background: copiedId === `${activeDay}-${activePlatform}` ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "transparent", border: "1px solid rgba(99,102,241,0.4)", color: copiedId === `${activeDay}-${activePlatform}` ? "#fff" : "#a5b4fc", fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.15s ease" }}
@@ -613,6 +688,34 @@ export default function App() {
                       <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(99,102,241,0.1)", borderTop: "2px solid rgba(99,102,241,0.3)", borderRadius: "10px", padding: "28px", maxHeight: "520px", overflowY: "auto" }}>
                         <pre style={{ fontFamily: "'IBM Plex Mono', 'JetBrains Mono', monospace", fontSize: "13.5px", lineHeight: 1.85, whiteSpace: "pre-wrap", color: "rgba(232,232,240,0.82)", margin: 0 }}>{currentPiece.content}</pre>
                       </div>
+                      {((currentPiece.alt_hooks?.length || 0) > 0 || (currentPiece.cta_options?.length || 0) > 0) && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
+                          {!!currentPiece.alt_hooks?.length && (
+                            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                              <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Alternate hooks</div>
+                              <div style={{ display: "grid", gap: "8px" }}>
+                                {currentPiece.alt_hooks?.map((hook, index) => (
+                                  <button key={index} onClick={() => handleCopy(hook, `${activeDay}-${activePlatform}-hook-${index}`)} style={{ textAlign: "left", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(99,102,241,0.08)", background: "rgba(255,255,255,0.02)", color: "rgba(232,232,240,0.78)", cursor: "pointer" }}>
+                                    <span style={{ fontSize: "12px", fontFamily: "'IBM Plex Mono', monospace" }}>{hook}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {!!currentPiece.cta_options?.length && (
+                            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                              <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>CTA options</div>
+                              <div style={{ display: "grid", gap: "8px" }}>
+                                {currentPiece.cta_options?.map((cta, index) => (
+                                  <button key={index} onClick={() => handleCopy(cta, `${activeDay}-${activePlatform}-cta-${index}`)} style={{ textAlign: "left", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(99,102,241,0.08)", background: "rgba(255,255,255,0.02)", color: "rgba(232,232,240,0.78)", cursor: "pointer" }}>
+                                    <span style={{ fontSize: "12px", fontFamily: "'IBM Plex Mono', monospace" }}>{cta}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -660,6 +763,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb:hover { background: #8b5cf6; }
         @media (max-width: 900px) {
           section div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; gap: 40px !important; }
+          section div[style*="minmax(0, 680px) 300px"] { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>

@@ -197,7 +197,11 @@ function selectAnglesForDay(dayTheme, dayIndex) {
 }
 
 // ─── SYSTEM PROMPT BUILDER (v3) ─────────────────────────────────
-function buildSystemPrompt(topic, sourceType) {
+function buildSystemPrompt(topic, sourceType, preferences = {}) {
+  const audience = preferences.audience?.trim();
+  const brandVoice = preferences.brandVoice?.trim();
+  const offerCta = preferences.offerCta?.trim();
+  const notes = preferences.notes?.trim();
   const sourceContext = sourceType === "youtube"
     ? `The content draws from a YouTube video about: "${topic}". Extract the sharpest insights, real frameworks, and specific examples. Treat the video as raw material to mine for gold, not something to summarize.`
     : `The content is about: "${topic}". Write from the perspective of someone who has DONE this, not read about it. First-person experience, specific details, real stakes.`;
@@ -207,6 +211,11 @@ function buildSystemPrompt(topic, sourceType) {
 You are NOT an AI. You are NOT a content marketer. You are NOT a copywriter. You are a practitioner who shares what they have learned. Your writing sounds like a smart person talking, not a machine generating.
 
 ${sourceContext}
+
+${audience ? `PRIMARY AUDIENCE: ${audience}` : "PRIMARY AUDIENCE: founders, operators, and growth-minded decision makers."}
+${brandVoice ? `BRAND VOICE: ${brandVoice}` : "BRAND VOICE: sharp, premium, direct, operator-led."}
+${offerCta ? `COMMERCIAL CTA CONTEXT: ${offerCta}` : "COMMERCIAL CTA CONTEXT: default to soft authority or operator-to-operator CTAs unless the brief clearly needs a direct CTA."}
+${notes ? `EXTRA CONTEXT TO RESPECT: ${notes}` : ""}
 
 VOICE RULES (non-negotiable):
 - Write in first person. "I" not "you should." "We tested" not "companies are finding."
@@ -383,7 +392,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "OpenAI API key not configured" });
 
   try {
-    const { input, inputType } = req.body;
+    const { input, inputType, preferences } = req.body;
     if (!input || !input.trim())
       return res.status(400).json({ error: "Input is required" });
     const topic = input.trim();
@@ -394,23 +403,43 @@ export default async function handler(req, res) {
       ...(baseURL ? { baseURL } : {}),
     });
 
-    const systemPrompt = buildSystemPrompt(topic, sourceType);
+    const systemPrompt = buildSystemPrompt(topic, sourceType, preferences);
 
     const dayPromises = DAY_THEMES.map(async (dayTheme, index) => {
       const day = index + 1;
       const angle = selectAnglesForDay(dayTheme, index);
       const userPrompt = buildDayPrompt(day, topic, dayTheme, angle);
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 6000,
-        temperature: 0.82,
-        response_format: { type: "json_object" },
-      });
+      const modelCandidates = [
+        process.env.OPENAI_MODEL,
+        "gpt-4.1-mini",
+        "gpt-4o-mini",
+      ].filter(Boolean);
+
+      let completion;
+      let lastError;
+
+      for (const model of modelCandidates) {
+        try {
+          completion = await openai.chat.completions.create({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            max_tokens: 6000,
+            temperature: 0.82,
+            response_format: { type: "json_object" },
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!completion) {
+        throw lastError || new Error(`Failed to generate day ${day}`);
+      }
 
       const rawContent = completion.choices?.[0]?.message?.content;
       if (!rawContent) throw new Error(`No content for day ${day}`);
@@ -442,6 +471,12 @@ export default async function handler(req, res) {
       engine: "content-decision-engine",
       days: results,
       generatedAt: Date.now(),
+      preferences: {
+        audience: preferences?.audience || "",
+        brandVoice: preferences?.brandVoice || "",
+        offerCta: preferences?.offerCta || "",
+        notes: preferences?.notes || "",
+      },
     });
   } catch (err) {
     console.error("Generate error:", err);
