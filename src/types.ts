@@ -20,6 +20,18 @@ export interface ContentPreferences {
   brandVoice: string;
   offerCta: string;
   notes: string;
+  campaignGoal?: string;
+  coreOffer?: string;
+  proofPoints?: string;
+  competitorContext?: string;
+  bannedClaims?: string;
+}
+
+export interface StrategyBrief {
+  positioning: string;
+  hookThemes: string[];
+  proofAssets: string[];
+  ctaStrategy: string;
 }
 
 export interface ContentCalendar {
@@ -28,4 +40,6 @@ export interface ContentCalendar {
   days: DayContent[];
   generatedAt: number;
   preferences?: ContentPreferences;
+  presetName?: string;
+  strategyBrief?: StrategyBrief;
 }

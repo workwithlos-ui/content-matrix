@@ -202,6 +202,11 @@ function buildSystemPrompt(topic, sourceType, preferences = {}) {
   const brandVoice = preferences.brandVoice?.trim();
   const offerCta = preferences.offerCta?.trim();
   const notes = preferences.notes?.trim();
+  const campaignGoal = preferences.campaignGoal?.trim();
+  const coreOffer = preferences.coreOffer?.trim();
+  const proofPoints = preferences.proofPoints?.trim();
+  const competitorContext = preferences.competitorContext?.trim();
+  const bannedClaims = preferences.bannedClaims?.trim();
   const sourceContext = sourceType === "youtube"
     ? `The content draws from a YouTube video about: "${topic}". Extract the sharpest insights, real frameworks, and specific examples. Treat the video as raw material to mine for gold, not something to summarize.`
     : `The content is about: "${topic}". Write from the perspective of someone who has DONE this, not read about it. First-person experience, specific details, real stakes.`;
@@ -215,6 +220,11 @@ ${sourceContext}
 ${audience ? `PRIMARY AUDIENCE: ${audience}` : "PRIMARY AUDIENCE: founders, operators, and growth-minded decision makers."}
 ${brandVoice ? `BRAND VOICE: ${brandVoice}` : "BRAND VOICE: sharp, premium, direct, operator-led."}
 ${offerCta ? `COMMERCIAL CTA CONTEXT: ${offerCta}` : "COMMERCIAL CTA CONTEXT: default to soft authority or operator-to-operator CTAs unless the brief clearly needs a direct CTA."}
+${campaignGoal ? `CAMPAIGN GOAL: ${campaignGoal}` : "CAMPAIGN GOAL: build authority, useful engagement, and qualified interest."}
+${coreOffer ? `CORE OFFER: ${coreOffer}` : "CORE OFFER: strategic help, product, or service connected to the topic."}
+${proofPoints ? `PROOF BANK: ${proofPoints}` : ""}
+${competitorContext ? `COMPETITOR CONTEXT: ${competitorContext}` : ""}
+${bannedClaims ? `BANNED CLAIMS / RED LINES: ${bannedClaims}` : ""}
 ${notes ? `EXTRA CONTEXT TO RESPECT: ${notes}` : ""}
 
 VOICE RULES (non-negotiable):
@@ -376,6 +386,32 @@ function cleanPiece(piece) {
   };
 }
 
+function buildStrategyBrief(topic, preferences = {}) {
+  const audience = preferences.audience?.trim() || "Founders and operators";
+  const coreOffer = preferences.coreOffer?.trim() || "Strategic offer";
+  const campaignGoal = preferences.campaignGoal?.trim() || "Authority and qualified conversations";
+  const proofPoints = preferences.proofPoints?.trim();
+  const competitorContext = preferences.competitorContext?.trim();
+  const offerCta = preferences.offerCta?.trim() || "Invite qualified replies or DMs";
+
+  return {
+    positioning: `Own ${topic} for ${audience} by making the content more specific, more operator-led, and more commercially useful than generic AI repurposing tools.`,
+    hookThemes: [
+      "What most people get wrong about this topic",
+      "The hidden cost of the current default approach",
+      "What actually changed results in practice"
+    ],
+    proofAssets: [
+      proofPoints || "Bring one real story, one concrete shift, and one number with context into each day.",
+      competitorContext
+        ? `Differentiate against: ${competitorContext}`
+        : "Differentiate against generic templated advice and shallow AI outputs.",
+      `Tie the content back to the offer: ${coreOffer}`
+    ],
+    ctaStrategy: `${campaignGoal}. CTA direction: ${offerCta}.`
+  };
+}
+
 // ─── HANDLER ────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -471,11 +507,17 @@ export default async function handler(req, res) {
       engine: "content-decision-engine",
       days: results,
       generatedAt: Date.now(),
+      strategyBrief: buildStrategyBrief(topic, preferences),
       preferences: {
         audience: preferences?.audience || "",
         brandVoice: preferences?.brandVoice || "",
         offerCta: preferences?.offerCta || "",
         notes: preferences?.notes || "",
+        campaignGoal: preferences?.campaignGoal || "",
+        coreOffer: preferences?.coreOffer || "",
+        proofPoints: preferences?.proofPoints || "",
+        competitorContext: preferences?.competitorContext || "",
+        bannedClaims: preferences?.bannedClaims || "",
       },
     });
   } catch (err) {

@@ -7,6 +7,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { ContentCalendar, ContentPiece, ContentPreferences } from "./types";
+import { STARTER_PRESETS, type ContentPreset } from "./presets";
 
 // ─── PARTICLE CANVAS ──────────────────────────────────────────────────────────
 
@@ -221,12 +222,20 @@ const LOADING_MSGS = [
 
 export default function App() {
   const HISTORY_KEY = "content-matrix-history-v1";
+  const PRESET_KEY = "content-matrix-presets-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
   const [audience, setAudience] = useState("Founders and operators");
   const [brandVoice, setBrandVoice] = useState("Sharp, premium, operator-led");
   const [offerCta, setOfferCta] = useState("Invite replies or DMs for deeper strategy help");
   const [notes, setNotes] = useState("");
+  const [campaignGoal, setCampaignGoal] = useState("Drive qualified conversations and authority");
+  const [coreOffer, setCoreOffer] = useState("Strategic advisory, service, or audit");
+  const [proofPoints, setProofPoints] = useState("");
+  const [competitorContext, setCompetitorContext] = useState("");
+  const [bannedClaims, setBannedClaims] = useState("");
+  const [activePresetId, setActivePresetId] = useState<string>(STARTER_PRESETS[0].id);
+  const [savedPresets, setSavedPresets] = useState<ContentPreset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<ContentCalendar | null>(null);
@@ -249,8 +258,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRESET_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setSavedPresets(parsed);
+    } catch {
+      // ignore malformed preset memory
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
   }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(savedPresets.slice(0, 10)));
+  }, [savedPresets]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -258,6 +282,45 @@ export default function App() {
   }, []);
 
   const scrollToTool = () => toolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const applyPreferences = useCallback((preferences: ContentPreferences) => {
+    setAudience(preferences.audience);
+    setBrandVoice(preferences.brandVoice);
+    setOfferCta(preferences.offerCta);
+    setNotes(preferences.notes);
+    setCampaignGoal(preferences.campaignGoal || "Drive qualified conversations and authority");
+    setCoreOffer(preferences.coreOffer || "Strategic advisory, service, or audit");
+    setProofPoints(preferences.proofPoints || "");
+    setCompetitorContext(preferences.competitorContext || "");
+    setBannedClaims(preferences.bannedClaims || "");
+  }, []);
+
+  const saveCurrentPreset = useCallback(() => {
+    const label = input.trim()
+      ? `Preset: ${input.trim().slice(0, 28)}`
+      : `Preset ${savedPresets.length + 1}`;
+    const preset: ContentPreset = {
+      id: `saved-${Date.now()}`,
+      label,
+      description: "Saved from your current generator settings.",
+      preferences: {
+        audience: audience.trim(),
+        brandVoice: brandVoice.trim(),
+        offerCta: offerCta.trim(),
+        notes: notes.trim(),
+        campaignGoal: campaignGoal.trim(),
+        coreOffer: coreOffer.trim(),
+        proofPoints: proofPoints.trim(),
+        competitorContext: competitorContext.trim(),
+        bannedClaims: bannedClaims.trim(),
+      }
+    };
+    setSavedPresets((prev) => [preset, ...prev.filter((item) => item.label !== preset.label)].slice(0, 10));
+    setActivePresetId(preset.id);
+    showToast("Preset saved");
+  }, [audience, brandVoice, input, notes, offerCta, savedPresets.length, showToast]);
+
+  const allPresets = [...STARTER_PRESETS, ...savedPresets];
 
   const handleGenerate = useCallback(async () => {
     if (!input.trim()) { showToast("Enter a YouTube URL or topic first", false); return; }
@@ -268,6 +331,11 @@ export default function App() {
       brandVoice: brandVoice.trim(),
       offerCta: offerCta.trim(),
       notes: notes.trim(),
+      campaignGoal: campaignGoal.trim(),
+      coreOffer: coreOffer.trim(),
+      proofPoints: proofPoints.trim(),
+      competitorContext: competitorContext.trim(),
+      bannedClaims: bannedClaims.trim(),
     };
 
     try {
@@ -284,14 +352,19 @@ export default function App() {
       });
       if (!res.ok) { const e = await res.json().catch(() => ({ error: "Error" })); throw new Error(e.error || `HTTP ${res.status}`); }
       const data: ContentCalendar = await res.json();
-      setResult(data); setActiveDay(0); setActivePlatform("LinkedIn");
-      setHistory(prev => [data, ...prev.filter(item => item.generatedAt !== data.generatedAt)].slice(0, 8));
+      const enriched: ContentCalendar = {
+        ...data,
+        preferences,
+        presetName: allPresets.find((preset) => preset.id === activePresetId)?.label,
+      };
+      setResult(enriched); setActiveDay(0); setActivePlatform("LinkedIn");
+      setHistory(prev => [enriched, ...prev.filter(item => item.generatedAt !== enriched.generatedAt)].slice(0, 8));
       showToast("5-day content calendar ready");
       setTimeout(() => toolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Generation failed", false);
     } finally { clearInterval(interval); setIsGenerating(false); }
-  }, [input, email, audience, brandVoice, offerCta, notes, showToast]);
+  }, [input, email, audience, brandVoice, offerCta, notes, campaignGoal, coreOffer, proofPoints, competitorContext, bannedClaims, showToast, allPresets, activePresetId]);
 
   const handleCopy = useCallback((content: string, id: string) => {
     navigator.clipboard.writeText(content).then(() => {
@@ -558,6 +631,42 @@ export default function App() {
                   onFocus={e => { e.target.style.borderColor = "rgba(99,102,241,0.6)"; e.target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)"; }}
                   onBlur={e => { e.target.style.borderColor = "rgba(99,102,241,0.2)"; e.target.style.boxShadow = "none"; }} />
               </div>
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "10px" }}>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase" }}>Brand kit preset</label>
+                  <button type="button" onClick={saveCurrentPreset} style={{ background: "transparent", border: "1px solid rgba(99,102,241,0.22)", borderRadius: "999px", padding: "8px 12px", color: "#c7d2fe", cursor: "pointer", fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                    Save current
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+                  {allPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setActivePresetId(preset.id);
+                        applyPreferences(preset.preferences);
+                        showToast(`Loaded ${preset.label}`);
+                      }}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "999px",
+                        border: activePresetId === preset.id ? "1px solid rgba(139,92,246,0.8)" : "1px solid rgba(99,102,241,0.2)",
+                        background: activePresetId === preset.id ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.03)",
+                        color: activePresetId === preset.id ? "#ffffff" : "#c7d2fe",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: 700
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: "12px", color: "rgba(232,232,240,0.42)", lineHeight: 1.6 }}>
+                  {(allPresets.find((preset) => preset.id === activePresetId) || allPresets[0])?.description}
+                </div>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Audience</label>
@@ -573,6 +682,35 @@ export default function App() {
               <div style={{ marginBottom: "14px" }}>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Primary CTA Goal</label>
                 <input type="text" value={offerCta} onChange={e => setOfferCta(e.target.value)} placeholder="DM for audit, book a call, join newsletter..."
+                  style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Campaign goal</label>
+                  <input type="text" value={campaignGoal} onChange={e => setCampaignGoal(e.target.value)} placeholder="Lead gen, authority, launch, subscriber growth..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Core offer</label>
+                  <input type="text" value={coreOffer} onChange={e => setCoreOffer(e.target.value)} placeholder="Audit, offer, product, service..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Proof bank</label>
+                  <textarea value={proofPoints} onChange={e => setProofPoints(e.target.value)} rows={3} placeholder="Case studies, metrics, stories, proof texture..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Competitor context</label>
+                  <textarea value={competitorContext} onChange={e => setCompetitorContext(e.target.value)} rows={3} placeholder="What competitors say, where they're weak, what angles are crowded..."
+                    style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Banned claims / red lines</label>
+                <input type="text" value={bannedClaims} onChange={e => setBannedClaims(e.target.value)} placeholder="No income claims, no fake urgency, no guaranteed outcomes..."
                   style={{ width: "100%", padding: "14px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "15px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box" }} />
               </div>
               <div style={{ marginBottom: "28px" }}>
@@ -611,8 +749,17 @@ export default function App() {
                 </div>
                 <div style={{ display: "grid", gap: "10px" }}>
                   {history.map(item => (
-                    <button key={item.generatedAt} onClick={() => { setResult(item); setInput(item.topic); setActiveDay(0); setActivePlatform("LinkedIn"); }} style={{ textAlign: "left", padding: "14px", borderRadius: "12px", border: "1px solid rgba(99,102,241,0.08)", background: "rgba(255,255,255,0.02)", color: "#E8E8F0", cursor: "pointer" }}>
+                    <button key={item.generatedAt} onClick={() => {
+                      setResult(item);
+                      setInput(item.topic);
+                      setActiveDay(0);
+                      setActivePlatform("LinkedIn");
+                      if (item.preferences) applyPreferences(item.preferences);
+                    }} style={{ textAlign: "left", padding: "14px", borderRadius: "12px", border: "1px solid rgba(99,102,241,0.08)", background: "rgba(255,255,255,0.02)", color: "#E8E8F0", cursor: "pointer" }}>
                       <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "4px" }}>{item.topic.length > 42 ? `${item.topic.slice(0, 42)}...` : item.topic}</div>
+                      {item.presetName && (
+                        <div style={{ fontSize: "11px", color: "#a5b4fc", marginBottom: "4px" }}>{item.presetName}</div>
+                      )}
                       <div style={{ fontSize: "11px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>{new Date(item.generatedAt).toLocaleString()}</div>
                     </button>
                   ))}
@@ -629,6 +776,7 @@ export default function App() {
                 <div>
                   <h3 style={{ fontWeight: 700, fontSize: "1.5rem", color: "#E8E8F0", letterSpacing: "-0.02em", marginBottom: "4px" }}>Your 5-Day Calendar</h3>
                   <p style={{ fontSize: "13px", color: "rgba(232,232,240,0.35)", fontFamily: "monospace" }}>{result.topic.length > 60 ? result.topic.slice(0, 60) + "..." : result.topic}</p>
+                  {result.presetName && <p style={{ fontSize: "12px", color: "#a5b4fc", marginTop: "6px" }}>Preset: {result.presetName}</p>}
                 </div>
                 <button onClick={handleDownloadAll} style={{ padding: "10px 22px", borderRadius: "8px", background: "transparent", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}
@@ -636,6 +784,32 @@ export default function App() {
                   Download All
                 </button>
               </div>
+
+              {result.strategyBrief && (
+                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: "14px", marginBottom: "18px" }}>
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Positioning</div>
+                    <div style={{ fontSize: "14px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>{result.strategyBrief.positioning}</div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Hook themes</div>
+                    <div style={{ display: "grid", gap: "8px" }}>
+                      {result.strategyBrief.hookThemes.map((hook, index) => (
+                        <div key={index} style={{ fontSize: "13px", color: "rgba(232,232,240,0.74)" }}>{hook}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Proof + CTA</div>
+                    <div style={{ display: "grid", gap: "8px", marginBottom: "12px" }}>
+                      {result.strategyBrief.proofAssets.map((asset, index) => (
+                        <div key={index} style={{ fontSize: "13px", color: "rgba(232,232,240,0.74)" }}>{asset}</div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#c7d2fe" }}>{result.strategyBrief.ctaStrategy}</div>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "8px", marginBottom: "16px", overflowX: "auto", paddingBottom: "4px" }}>
                 {result.days.map((day, i) => (
