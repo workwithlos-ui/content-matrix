@@ -5,7 +5,7 @@
  * Fonts: Clash Display (display) + Satoshi/IBM Plex Sans (body) + JetBrains Mono (code)
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ContentCalendar, ContentPiece, ContentPreferences, PieceScorecard } from "./types";
 import { STARTER_PRESETS, type ContentPreset } from "./presets";
 
@@ -225,6 +225,7 @@ export default function App() {
   const PRESET_KEY = "content-matrix-presets-v1";
   const CLIENT_KEY = "content-matrix-client-profile-v1";
   const REVIEW_KEY = "content-matrix-review-state-v1";
+  const FEEDBACK_KEY = "content-matrix-feedback-v1";
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
   const [clientProfile, setClientProfile] = useState("Default workspace");
@@ -241,6 +242,7 @@ export default function App() {
   const [activePresetId, setActivePresetId] = useState<string>(STARTER_PRESETS[0].id);
   const [savedPresets, setSavedPresets] = useState<ContentPreset[]>([]);
   const [reviewState, setReviewState] = useState<Record<string, { status: "draft" | "approved" | "revise"; note: string }>>({});
+  const [feedbackState, setFeedbackState] = useState<Record<string, { rating: number; outcome: "testing" | "winner" | "weak"; note: string; platform: string }>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<ContentCalendar | null>(null);
@@ -290,6 +292,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FEEDBACK_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") setFeedbackState(parsed);
+    } catch {
+      // ignore malformed feedback state
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
   }, [history]);
 
@@ -304,6 +317,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(REVIEW_KEY, JSON.stringify(reviewState));
   }, [reviewState]);
+
+  useEffect(() => {
+    localStorage.setItem(FEEDBACK_KEY, JSON.stringify(feedbackState));
+  }, [feedbackState]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -513,6 +530,38 @@ ${sections}`;
 
   const scorecard = buildScorecard(currentPiece);
 
+  const learningInsights = useMemo(() => {
+    const entries = Object.values(feedbackState);
+    const total = entries.length;
+    if (!total) {
+      return {
+        approvalRate: "0%",
+        bestPlatform: "No feedback yet",
+        learningNote: "Start rating outputs and marking winners to build a real performance memory."
+      };
+    }
+    const winners = entries.filter((item) => item.outcome === "winner").length;
+    const approved = Object.values(reviewState).filter((item) => item.status === "approved").length;
+    const platformCounts = entries.reduce<Record<string, { total: number; winner: number }>>((acc, item) => {
+      acc[item.platform] ||= { total: 0, winner: 0 };
+      acc[item.platform].total += 1;
+      if (item.outcome === "winner") acc[item.platform].winner += 1;
+      return acc;
+    }, {});
+    const bestPlatform = Object.entries(platformCounts).sort((a, b) => {
+      const aRate = a[1].winner / a[1].total;
+      const bRate = b[1].winner / b[1].total;
+      return bRate - aRate;
+    })[0]?.[0] || "No platform signal yet";
+    return {
+      approvalRate: `${Math.round((approved / Math.max(Object.keys(reviewState).length, 1)) * 100)}%`,
+      bestPlatform,
+      learningNote: winners
+        ? `${winners} winner${winners === 1 ? "" : "s"} logged. Push harder on ${bestPlatform} while improving low-rated drafts.`
+        : "No winners logged yet. Use outcome tracking after publishing to learn what actually lands."
+    };
+  }, [feedbackState, reviewState]);
+
   const buildCreativeBrief = useCallback((piece: ContentPiece | undefined, dayLabel?: string) => {
     if (!piece) return null;
     const hook = piece.alt_hooks?.[0] || piece.title;
@@ -541,6 +590,19 @@ ${sections}`;
       }
     }));
   }, [currentPieceKey]);
+
+  const updateFeedback = useCallback((updates: Partial<{ rating: number; outcome: "testing" | "winner" | "weak"; note: string }>) => {
+    if (!currentPieceKey || !currentPiece) return;
+    setFeedbackState((prev) => ({
+      ...prev,
+      [currentPieceKey]: {
+        rating: updates.rating ?? prev[currentPieceKey]?.rating ?? 7,
+        outcome: updates.outcome ?? prev[currentPieceKey]?.outcome ?? "testing",
+        note: updates.note ?? prev[currentPieceKey]?.note ?? "",
+        platform: currentPiece.platform
+      }
+    }));
+  }, [currentPiece, currentPieceKey]);
 
   const V = "#6366f1"; // violet primary
   const BG = "#080810"; // background
@@ -980,6 +1042,21 @@ ${sections}`;
                 </div>
               )}
 
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: "14px", marginBottom: "18px" }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Approval rate</div>
+                  <div style={{ fontSize: "30px", fontWeight: 800, color: "#fff" }}>{learningInsights.approvalRate}</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Best platform signal</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#fff" }}>{learningInsights.bestPlatform}</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: "14px", padding: "18px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Learning insight</div>
+                  <div style={{ fontSize: "14px", lineHeight: 1.7, color: "rgba(232,232,240,0.78)" }}>{learningInsights.learningNote}</div>
+                </div>
+              </div>
+
               <div style={{ display: "flex", gap: "8px", marginBottom: "16px", overflowX: "auto", paddingBottom: "4px" }}>
                 {result.days.map((day, i) => (
                   <button key={i} onClick={() => setActiveDay(i)}
@@ -1103,6 +1180,68 @@ ${sections}`;
                             </div>
                           </div>
                         )}
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
+                        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Outcome tracking</div>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                            {(["testing", "winner", "weak"] as const).map((outcome) => (
+                              <button
+                                key={outcome}
+                                onClick={() => updateFeedback({ outcome })}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: "999px",
+                                  border: feedbackState[currentPieceKey]?.outcome === outcome ? "1px solid rgba(139,92,246,0.8)" : "1px solid rgba(99,102,241,0.2)",
+                                  background: feedbackState[currentPieceKey]?.outcome === outcome ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.02)",
+                                  color: "#E8E8F0",
+                                  cursor: "pointer",
+                                  textTransform: "capitalize",
+                                  fontSize: "12px",
+                                  fontWeight: 700
+                                }}
+                              >
+                                {outcome}
+                              </button>
+                            ))}
+                          </div>
+                          <label style={{ display: "block", fontSize: "11px", color: "rgba(232,232,240,0.48)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Quality rating</label>
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            value={feedbackState[currentPieceKey]?.rating || 7}
+                            onChange={(e) => updateFeedback({ rating: Number(e.target.value) })}
+                            style={{ width: "100%", marginBottom: "12px" }}
+                          />
+                          <div style={{ fontSize: "13px", color: "#ddd6fe", marginBottom: "12px" }}>
+                            Rating: {feedbackState[currentPieceKey]?.rating || 7}/10
+                          </div>
+                          <textarea
+                            value={feedbackState[currentPieceKey]?.note || ""}
+                            onChange={(e) => updateFeedback({ note: e.target.value })}
+                            rows={3}
+                            placeholder="What actually happened after posting this?"
+                            style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", color: "#E8E8F0", fontSize: "13px", outline: "none", fontFamily: "'IBM Plex Sans', sans-serif", boxSizing: "border-box", resize: "vertical" }}
+                          />
+                        </div>
+                        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(99,102,241,0.1)", borderRadius: "10px", padding: "18px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: "#a5b4fc", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>Adaptive recommendation</div>
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>
+                              {feedbackState[currentPieceKey]?.outcome === "winner"
+                                ? `This ${currentPiece.platform} pattern is working. Save its hook and CTA as part of the swipe file.`
+                                : feedbackState[currentPieceKey]?.outcome === "weak"
+                                  ? `This draft underperformed. Rewrite the opener and add stronger proof before reusing the pattern.`
+                                  : `Still testing. Publish, track response, then mark it so the workspace builds real signal.`}
+                            </div>
+                            <div style={{ fontSize: "13px", color: "rgba(232,232,240,0.78)" }}>
+                              {learningInsights.bestPlatform !== "No feedback yet"
+                                ? `Current strongest platform signal: ${learningInsights.bestPlatform}. Bias new campaigns toward that channel while improving weak ones.`
+                                : "No platform signal yet. Once you log a few winners, this starts turning into a real learning loop."}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                       {((currentPiece.alt_hooks?.length || 0) > 0 || (currentPiece.cta_options?.length || 0) > 0) && (
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginTop: "16px" }}>
